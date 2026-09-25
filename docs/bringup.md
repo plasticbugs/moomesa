@@ -90,3 +90,9 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 
 Date, build md5, what was seen, what it ruled out. One line each. The theories
 that died belong here as much as the one that lived.
+
+- 2026-09-25, bitstream md5 7a4d7db59cce32203ef7dc640ca25c4d (compile 14):
+  not yet flashed.  Fit 48% ALMs, 260/308 RAM blocks; setup slack +0.063 ns
+  worst corner; no ignored constraints in moomesa_pocket.sdc; run_mem pass
+  at holds 1/4/7; run_system to character select; check_frames pass;
+  check_json pass.

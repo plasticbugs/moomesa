@@ -1,16 +1,21 @@
-Cowboys of Moo Mesa
-MANUFACTURER, YEAR
+Wild West C.O.W.-Boys of Moo Mesa
+Konami, 1992 (GX151)
 
-One paragraph on what the game is and
-what is in the gateware. Plain
-characters only, 32 lines at most,
-* for bullets.
+Four cowboys against the outlaws of Cow
+Town. The whole board is in the gateware:
+68000, Z80, YM2151 and K054539 in stereo,
+the Konami tilemap, sprite and mixer
+chips, checked pixel for pixel against
+MAME.
 
 ROMs are not included. Build the image
 from your own MAME moomesa romset with
 mra_build.py and moomesa.mra, and copy
 it to Assets/moomesa/common/moomesa.rom
 
-* A / Y  button 1
-* B / X  button 2
+* A / Y  shoot
+* B / X  jump
 * Select coin, Start start
+* Settings (difficulty, lives) are in
+  the game's own service menu; they are
+  saved on the SD card.

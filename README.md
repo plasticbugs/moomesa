@@ -24,28 +24,36 @@ DMA.  All of it is in the gateware; the machine is described in
 
 ## Status
 
-**Not yet run on a Pocket.**
+**Not yet run on a Pocket.** The build fits (48% of the ALMs, 260 of 308
+RAM blocks) and meets timing at every corner (worst setup slack +0.063 ns at
+96 MHz); every item on the pre-flash list in `docs/bringup.md` passes.
 
 Proven, and by what:
 - the ROM image: identical to what MAME hands each chip (`tools/verify_rom.py`),
   and built identically by `tools/mra_build.py` and the standard `mra` tool;
 - the memory path: every region read back through the core's ports after a
-  download at the loader's rate, 0 wrong (`sim/run_mem.sh`);
+  download at the loader's rate, 0 wrong, also with all five ports at once
+  (`sim/run_mem.sh`);
 - the video: 47 frozen states from boot, attract, the intro's alpha-blended
   fog, character select, play with up to 65 sprites, zoom, line scroll and
   service mode, 0 differing pixels in the Python model and in the RTL;
-- the K054539 against MAME's own code, sample by sample;
-- the whole machine from reset, on ideal memories and on the real memory glue,
-  to the game's RAM/ROM check screen with every checksum matching MAME's.
+- the K054539 against MAME's own code, sample by sample (max 4 LSB over 40 s);
+- the whole machine from reset: RAM/ROM check with MAME's checksums, title
+  with the credit, character select, stage 1 (`sim/run_machine.sh`); on the
+  real memory glue through character select (`sim/run_system.sh`);
+- its sound against MAME's recording with the same inputs: per-second level
+  within about 10%, same band profile, starting in the same second;
+- three consecutive frames of a still screen identical (no OLED-marking
+  alternation, `tools/check_frames.py`).
 
 Not proven:
 - anything on hardware;
-- gameplay frames of the running machine against MAME's, and the sound of the
-  whole machine against MAME's recording;
+- long play: later stages and bosses have not been compared with MAME;
 - sprite shadows and mirroring (never seen in 20 minutes of MAME census), the
   protection DMA with a non-zero length (never triggered), flip screen (not
-  modelled — flagged on the panel if the game asks for it);
-- the EEPROM save round trip.
+  modelled -- flagged on the panel if the game asks for it);
+- the EEPROM save round trip (written to METHODOLOGY 5.24, untested);
+- players 3 and 4 (wired from a docked Pocket's controllers, untested).
 
 Known differences from MAME: the object DMA takes real time (about 30 us)
 where MAME's is instant.  The interrupts follow MAME's order, which the game

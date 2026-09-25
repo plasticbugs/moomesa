@@ -30,7 +30,9 @@ static void write_png(const std::string &path, const std::vector<uint8_t> &rgb);
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     int frames = 10, gap = 8, hold = 4, coin = 600, start = 700, play = 1000;
-    std::string rom, out = ".";
+    std::string rom, out = ".", wavp;
+    std::vector<int16_t> wav;
+    unsigned long long run_clk = 0;
     std::set<int> snaps;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -39,6 +41,7 @@ int main(int argc, char **argv) {
         else if (a == "-gap") gap = atoi(next().c_str());
         else if (a == "-o") out = next();
         else if (a == "-coin") coin = atoi(next().c_str());
+        else if (a == "-wav") wavp = next();
         else if (a == "-start") start = atoi(next().c_str());
         else if (a == "-play") play = atoi(next().c_str());
         else if (a == "-snap") {
@@ -100,6 +103,7 @@ int main(int argc, char **argv) {
         bool want = dut->pix_ce && dut->de;
         tick();
         status |= dut->dbg_status;
+        if (!wavp.empty() && (++run_clk % 2000) == 0) { wav.push_back(dut->snd_l); wav.push_back(dut->snd_r); }
         if (dut->watchdog_reset) watchdogs++;
         if (cap && px < W * H) {
             frame[3 * px + 0] = (dut->rgb >> 16) & 0xff;
@@ -122,6 +126,15 @@ int main(int argc, char **argv) {
         in_vblank = dut->vblank;
     }
     printf("%d frames, watchdog resets %d, halted %d, status %02x\n", frames, watchdogs, (int)dut->dbg_halted, status);
+    if (!wavp.empty()) {
+        FILE *w = fopen(wavp.c_str(), "wb");
+        uint32_t n = wav.size() * 2;
+        auto u32 = [&](uint32_t v) { fwrite(&v, 4, 1, w); };
+        auto u16 = [&](uint16_t v) { fwrite(&v, 2, 1, w); };
+        fwrite("RIFF", 1, 4, w); u32(36 + n); fwrite("WAVEfmt ", 1, 8, w);
+        u32(16); u16(1); u16(2); u32(48000); u32(48000 * 4); u16(4); u16(16);
+        fwrite("data", 1, 4, w); u32(n); fwrite(wav.data(), 2, wav.size(), w); fclose(w);
+    }
     delete dut;
     return 0;
 }

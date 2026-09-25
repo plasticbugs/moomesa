@@ -9,7 +9,7 @@
 //   word 0x400000   tile ROM     2 MB   32-bit rows, 2-word bursts   (tile)
 //   word 0x500000   PCM samples  2 MB   bytes, single words          (pcm)
 //   word 0x600000   68000 ROM    1 MB   16-bit, through a cache      (mrom)
-//   word 0x680000   Z80 ROM    256 KB   bytes, single words          (srom)
+//   word 0x680000   Z80 ROM    256 KB   bytes, through a cache       (srom)
 //   word 0x6A0000   EEPROM     128 B    taken off the download by core_top
 //
 // The image arrives from the Pocket as a byte stream and is written into
@@ -123,9 +123,10 @@ module moomesa_mem (
     end
 
     // ---------------------------------------------------- random clients
-    // 0 download (writes), 1 Z80, 2 K054539.  The controller serves them
-    // round-robin and lets one in between burst chunks.
-    localparam int NCLI = 3;
+    // 0 download (writes), 1 K054539.  The controller serves them
+    // round-robin and lets one in between burst chunks.  (The Z80 reads
+    // through its own cache, on the burst port.)
+    localparam int NCLI = 2;
     logic [24:1] c_addr  [NCLI];
     logic        c_req   [NCLI];
     logic        c_we    [NCLI];
@@ -141,27 +142,19 @@ module moomesa_mem (
     assign c_wdata[0] = dlq_head[15:0];
     assign c_be[0]    = 2'b11;
 
-    // the Z80 and the K054539 read bytes; the SDRAM holds them two to a
-    // word, high byte first
-    logic srom_served, pcm_served;
-    assign c_addr[1]  = SND_W | {7'd0, srom_addr[17:1]};
-    assign c_req[1]   = srom_req && !srom_served;
+    // the K054539 reads bytes; the SDRAM holds them two to a word, high
+    // byte first
+    logic pcm_served;
+    assign c_addr[1]  = PCM_W | {4'd0, pcm_addr[20:1]};
+    assign c_req[1]   = pcm_req && !pcm_served;
     assign c_we[1]    = 1'b0;
     assign c_wdata[1] = 16'd0;
     assign c_be[1]    = 2'b11;
-    assign c_addr[2]  = PCM_W | {4'd0, pcm_addr[20:1]};
-    assign c_req[2]   = pcm_req && !pcm_served;
-    assign c_we[2]    = 1'b0;
-    assign c_wdata[2] = 16'd0;
-    assign c_be[2]    = 2'b11;
     always_ff @(posedge clk) begin
-        srom_ack <= c_ack[1];
-        pcm_ack  <= c_ack[2];
-        if (c_ack[1]) srom_q <= srom_addr[0] ? rdata[7:0] : rdata[15:8];
-        if (c_ack[2]) pcm_q  <= pcm_addr[0]  ? rdata[7:0] : rdata[15:8];
-        if (!srom_req) srom_served <= 1'b0; else if (c_ack[1]) srom_served <= 1'b1;
-        if (!pcm_req)  pcm_served  <= 1'b0; else if (c_ack[2]) pcm_served  <= 1'b1;
-        if (init) begin srom_served <= 1'b0; pcm_served <= 1'b0; end
+        pcm_ack  <= c_ack[1];
+        if (c_ack[1]) pcm_q  <= pcm_addr[0]  ? rdata[7:0] : rdata[15:8];
+        if (!pcm_req)  pcm_served  <= 1'b0; else if (c_ack[1]) pcm_served  <= 1'b1;
+        if (init) pcm_served <= 1'b0;
     end
 
     // ------------------------------------------------------ 68000 cache
@@ -186,7 +179,7 @@ module moomesa_mem (
     logic        b_wr, b_done;
     logic  [9:0] b_idx;
     logic [15:0] b_data;
-    typedef enum logic [2:0] { B_IDLE, B_CACHE, B_TILE, B_SPR, B_GAP } bown_t;
+    typedef enum logic [2:0] { B_IDLE, B_CACHE, B_ZCACHE, B_TILE, B_SPR, B_GAP } bown_t;
     bown_t bown;
 
     always_ff @(posedge clk) begin
@@ -233,13 +226,63 @@ module moomesa_mem (
     end
     wire _unused_have = m_have;
 
+    // ------------------------------------------------------ Z80 cache
+    // The Z80 took a wait state on most SDRAM fetches, which made its boot
+    // checksum -- and anything it times by instruction count -- slow
+    // (METHODOLOGY 5.3).  Direct-mapped, 256 lines of 8 bytes (2 KB), filled
+    // by a 4-word burst, swept clean with the 68000's tags.
+    //   srom_addr[17:0]: byte [0], word [2:1], line index [10:3], tag [17:11]
+    logic [15:0] zdata [1024];
+    logic  [7:0] ztag  [256];           // {valid, tag}
+    logic [15:0] zdata_q;
+    logic  [7:0] ztag_q;
+    logic [17:0] z_a;
+    logic        z_served, z_fill_start, z_filling;
+    logic [15:0] z_word;
+    mc_t zc;
+    always_ff @(posedge clk) begin
+        zdata_q <= zdata[{z_a[10:3], z_a[2:1]}];
+        ztag_q  <= ztag[z_a[10:3]];
+        if (bown == B_ZCACHE && b_wr) zdata[{z_a[10:3], b_idx[1:0]}] <= b_data;
+        if (csweep < 10'd256) ztag[csweep[7:0]] <= 8'd0;
+        else if (zc == MC_DONE && z_filling) ztag[z_a[10:3]] <= {1'b1, z_a[17:11]};
+    end
+    always_ff @(posedge clk) begin
+        srom_ack <= 1'b0;
+        if (!srom_req) z_served <= 1'b0;
+        case (zc)
+            MC_IDLE: if (srom_req && !z_served) begin z_a <= srom_addr; zc <= MC_LOOK; end
+            MC_LOOK: zc <= MC_CMP;
+            MC_CMP: begin
+                if (ztag_q == {1'b1, z_a[17:11]}) begin
+                    srom_q <= z_a[0] ? zdata_q[7:0] : zdata_q[15:8];
+                    srom_ack <= 1'b1; z_served <= 1'b1; z_filling <= 1'b0;
+                    zc <= MC_IDLE;
+                end else begin
+                    z_fill_start <= 1'b1; z_filling <= 1'b1;
+                    zc <= MC_FILL;
+                end
+            end
+            MC_FILL: begin
+                if (bown == B_ZCACHE) z_fill_start <= 1'b0;
+                if (bown == B_ZCACHE && b_wr && b_idx[1:0] == z_a[2:1]) z_word <= b_data;
+                if (bown == B_ZCACHE && b_done) zc <= MC_DONE;
+            end
+            MC_DONE: begin
+                srom_q <= z_a[0] ? z_word[7:0] : z_word[15:8];
+                srom_ack <= 1'b1; z_served <= 1'b1; z_filling <= 1'b0;
+                zc <= MC_IDLE;
+            end
+            default: zc <= MC_IDLE;
+        endcase
+        if (init) begin zc <= MC_IDLE; z_served <= 1'b0; z_fill_start <= 1'b0; z_filling <= 1'b0; end
+    end
+
     // ------------------------------------------------------ the burst port
-    // Three users: the 68000 cache (4 words), the tile fetch (2) and the
-    // sprite fetch (4).  The owner is latched at grant and every result is
-    // routed by that latch, never by who is asking when it lands
-    // (METHODOLOGY 5.17).  Priority at grant: the 68000, whose every miss
-    // stalls the game; then the tile fetch, whose line has the earlier
-    // deadline; then sprites.  The controller wants b_req low for a clock
+    // Four users: the 68000 and Z80 caches (4 words each), the tile fetch (2)
+    // and the sprite fetch (4).  The owner is latched at grant and every
+    // result is routed by that latch, never by who is asking when it lands
+    // (METHODOLOGY 5.17).  The controller wants b_req low for a clock
     // between bursts (B_GAP).
     logic [15:0] t_w0, s_w0, s_w1, s_w2;
     logic        tile_served, spr_served;
@@ -247,13 +290,34 @@ module moomesa_mem (
     wire spr_want   = spr_req  && !spr_served;
     wire cache_want = m_fill_start;
 
+    // Round robin from the one after the last served, so no user waits
+    // behind more than three bursts: under fixed priority a saturating mix
+    // (sim/run_mem.sh) starved the sprite port for 16,878 clocks.
+    logic [1:0] rr;                         // last served: 0 cache, 1 Z80, 2 tile, 3 sprite
+    wire  [3:0] want = {spr_want, tile_want, z_fill_start, cache_want};
+    logic [1:0] pick;
+    logic       any;
+    always_comb begin
+        any = 1'b0; pick = 2'd0;
+        for (int k = 4; k >= 1; k--) begin
+            logic [1:0] i;
+            i = 2'(int'(rr) + k);
+            if (want[i]) begin any = 1'b1; pick = i; end
+        end
+    end
     always_ff @(posedge clk) begin
-        if (init) bown <= B_IDLE;
+        if (init) begin bown <= B_IDLE; rr <= 2'd3; end
         else case (bown)
-            B_IDLE: if (cache_want) bown <= B_CACHE;
-                    else if (tile_want) bown <= B_TILE;
-                    else if (spr_want)  bown <= B_SPR;
-            B_CACHE, B_TILE, B_SPR: if (b_done) bown <= B_GAP;
+            B_IDLE: if (any) begin
+                rr <= pick;
+                case (pick)
+                    2'd0: bown <= B_CACHE;
+                    2'd1: bown <= B_ZCACHE;
+                    2'd2: bown <= B_TILE;
+                    default: bown <= B_SPR;
+                endcase
+            end
+            B_CACHE, B_ZCACHE, B_TILE, B_SPR: if (b_done) bown <= B_GAP;
             default: bown <= B_IDLE;
         endcase
     end
@@ -262,9 +326,10 @@ module moomesa_mem (
     logic [24:1] b_addr_m;
     logic  [9:0] b_len_m;
     always_comb begin
-        b_req_m  = (bown == B_CACHE) || (bown == B_TILE) || (bown == B_SPR);
+        b_req_m  = (bown == B_CACHE) || (bown == B_ZCACHE) || (bown == B_TILE) || (bown == B_SPR);
         case (bown)
             B_CACHE: begin b_addr_m = PROG_W | {5'd0, m_a[19:3], 2'b00}; b_len_m = 10'd4; end
+            B_ZCACHE: begin b_addr_m = SND_W | {7'd0, z_a[17:3], 2'b00}; b_len_m = 10'd4; end
             B_TILE:  begin b_addr_m = TILE_W | {4'd0, tile_addr, 1'b0};  b_len_m = 10'd2; end
             default: begin b_addr_m = SPR_W  | {2'd0, spr_addr, 2'b00};  b_len_m = 10'd4; end
         endcase

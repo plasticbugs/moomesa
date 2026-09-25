@@ -137,10 +137,14 @@ module moo_sprites (
     logic [23:0] z_q0, z_q1;
     logic [10:0] r_a;
     logic [20:0] r_q;
+    // rtab's answer is registered twice: it feeds a multiplier, and straight
+    // out of the RAM that was the video's slowest path
+    logic [20:0] r_q0;
     always_ff @(posedge clk) begin
         z_q0 <= ztab[z_a0];
         z_q1 <= ztab[z_a1];
-        r_q  <= rtab[r_a];
+        r_q0 <= rtab[r_a];
+        r_q  <= r_q0;
     end
 
     // ------------------------------------------------------------ DMA and sort
@@ -248,7 +252,7 @@ module moo_sprites (
     // ------------------------------------------------------------ line engine
     typedef enum logic [4:0] {
         E_IDLE, E_NEXT, E_S1, E_S2, E_L1, E_L2, E_Z1, E_G1, E_G2, E_V,
-        E_VC, E_R0, E_R1, E_R2, E_R3, E_C0, E_CA, E_CM, E_C1, E_C2, E_PIX, E_NX, E_CLR
+        E_VC, E_R0, E_R1, E_RW, E_R2, E_R3, E_C0, E_CA, E_CM, E_C1, E_C2, E_PIX, E_NX, E_CLR
     } est_t;
     est_t es;
     logic  [8:0] Y;
@@ -441,7 +445,8 @@ module moo_sprites (
                 r_a <= (12'(nxt - top) > 12'd2047) ? 11'd2047 : 11'(nxt - top);
                 es <= E_R1;
             end
-            E_R1: es <= E_R2;
+            E_R1: es <= E_RW;
+            E_RW: es <= E_R2;
             E_R2: begin
                 // source row = (m * dy) >> 16, or (dsth - 1 - m) * dy >> 16 flipped
                 logic [32:0] pa, pb;
@@ -481,6 +486,7 @@ module moo_sprites (
                 else es <= E_C1;
             end
             E_C1: begin
+                // (r_q, dx, is two clocks away: E_CM and E_C2 cover it)
                 rom_addr <= {w1[15:6], 6'(tx + ty), pass ? row_b : row_a};
                 rom_req  <= 1'b1;
                 pi  <= (sx < 17'sd40) ? 17'sd40 - sx : 17'sd0;
