@@ -20,7 +20,7 @@
 #include <vector>
 
 static const int W = 320, H = 224;
-static const uint32_t IMG = 0x190000;      // must match <core>_mem.sv's layout
+static const uint32_t IMG = 0xD40080;      // must match moomesa.mra and moomesa_mem.sv
 
 static Vtb_system_top *dut;
 static void tick() { dut->clk = 0; dut->eval(); dut->clk = 1; dut->eval(); }

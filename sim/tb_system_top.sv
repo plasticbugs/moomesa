@@ -34,12 +34,12 @@ module tb_system_top (
     output logic        dbg_halted, watchdog_reset,
     output logic        mem_ready
 );
-    logic        mrom_req, mrom_ack;  logic [18:1] mrom_addr;  logic [15:0] mrom_q;
-    logic        srom_req, srom_ack;  logic [15:0] srom_addr;  logic  [7:0] srom_q;
-    logic        gfxl_req, gfxl_ack;  logic [17:0] gfxl_addr;  logic [31:0] gfxl_q;
-    logic        gfxs_req, gfxs_ack;  logic [17:0] gfxs_addr;  logic [31:0] gfxs_q;
-    logic        vram_req, vram_we, vram_ack;
-    logic [14:0] vram_addr;  logic [15:0] vram_din, vram_q;  logic [1:0] vram_ben;
+    logic        mrom_req, mrom_ack;  logic [19:1] mrom_addr;  logic [15:0] mrom_q;
+    logic        srom_req, srom_ack;  logic [17:0] srom_addr;  logic  [7:0] srom_q;
+    logic        pcm_req,  pcm_ack;   logic [20:0] pcm_addr;   logic  [7:0] pcm_q;
+    logic        tile_req, tile_ack;  logic [18:0] tile_addr;  logic [31:0] tile_q;
+    logic        spr_req,  spr_ack;   logic [19:0] spr_addr;   logic [63:0] spr_q;
+    logic        vram_ack;  logic [15:0] vram_q, mrom_misses;
 
     wire [15:0] dram_dq;  wire [12:0] dram_a;  wire [1:0] dram_ba;
     wire        dram_dqml, dram_dqmh, dram_clk, dram_cke;
@@ -64,10 +64,12 @@ module tb_system_top (
         .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data), .dl_active(reset),
         .mrom_req(mrom_req), .mrom_addr(mrom_addr), .mrom_ack(mrom_ack), .mrom_q(mrom_q),
         .srom_req(srom_req), .srom_addr(srom_addr), .srom_ack(srom_ack), .srom_q(srom_q),
-        .gfxl_req(gfxl_req), .gfxl_addr(gfxl_addr), .gfxl_ack(gfxl_ack), .gfxl_q(gfxl_q),
-        .gfxs_req(gfxs_req), .gfxs_addr(gfxs_addr), .gfxs_ack(gfxs_ack), .gfxs_q(gfxs_q),
-        .vram_req(vram_req), .vram_we(vram_we), .vram_addr(vram_addr),
-        .vram_din(vram_din), .vram_ben(vram_ben), .vram_ack(vram_ack), .vram_q(vram_q),
+        .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
+        .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
+        .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
+        .vram_req(1'b0), .vram_we(1'b0), .vram_addr(15'd0),
+        .vram_din(16'd0), .vram_ben(2'b00), .vram_ack(vram_ack), .vram_q(vram_q),
+        .mrom_misses(mrom_misses),
         .SDRAM_DQ(dram_dq), .SDRAM_A(dram_a), .SDRAM_BA(dram_ba),
         .SDRAM_DQML(dram_dqml), .SDRAM_DQMH(dram_dqmh),
         .SDRAM_nCS(dram_cs_n), .SDRAM_nWE(dram_we_n),
@@ -90,10 +92,9 @@ module tb_system_top (
         .clk(clk), .rst(reset | ~mem_ready), .pause(pause), .pix_sync(1'b0),
         .mrom_req(mrom_req), .mrom_addr(mrom_addr), .mrom_ack(mrom_ack), .mrom_q(mrom_q),
         .srom_req(srom_req), .srom_addr(srom_addr), .srom_ack(srom_ack), .srom_q(srom_q),
-        .gfxl_req(gfxl_req), .gfxl_addr(gfxl_addr), .gfxl_ack(gfxl_ack), .gfxl_q(gfxl_q),
-        .gfxs_req(gfxs_req), .gfxs_addr(gfxs_addr), .gfxs_ack(gfxs_ack), .gfxs_q(gfxs_q),
-        .vram_req(vram_req), .vram_we(vram_we), .vram_addr(vram_addr),
-        .vram_din(vram_din), .vram_ben(vram_ben), .vram_ack(vram_ack), .vram_q(vram_q),
+        .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
+        .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
+        .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
         .dswa(dswa), .dswb(dswb), .in0(in0), .in1(in1), .in2(in2),
         .rgb(rgb), .hsync(hsync), .vsync(vsync), .hblank(), .vblank(vblank),
         .pix_ce(pix_ce), .de(de), .snd(snd),

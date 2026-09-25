@@ -6,7 +6,7 @@ _G.KEEP = {}
 _G.KEEP.s = emu.add_machine_stop_notifier(function() end)
 
 -- EDIT: the memory regions of this driver, as `mame -listxml` or list_ports.lua names them
-local REGIONS = {":maincpu", ":audiocpu", ":gfx1"}
+local REGIONS = {":maincpu", ":soundcpu", ":k056832", ":k053246", ":k054539", ":eeprom"}
 for _, tag in ipairs(REGIONS) do
   local r = mac.memory.regions[tag]
   if r then

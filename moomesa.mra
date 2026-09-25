@@ -1,30 +1,59 @@
 <misterromdescription>
     <!--
         The ROM recipe.  tools/mra_build.py reads this and your MAME romset and
-        writes moomesa.rom; any standard MRA tool does the same.
+        writes moomesa.rom; the standard `mra` tool (mra-tools-c) builds the
+        same bytes, and tools/check_mra.py fails unless both give the md5
+        below.  tools/verify_rom.py checks each region against the bytes MAME
+        hands the chips.  METHODOLOGY section 5.7.
 
-        One <part> per ROM file, in image order.  Interleaved ROMs go inside an
-        <interleave output="16"> (or 32): each `map` digit is one byte of the
-        output word, read RIGHT TO LEFT as the MRA format and mra-tools-c do (the
-        rightmost digit is the word's first byte), and its value is the 1-based
-        byte of THIS part that lands there, 0 for none.  So two byte-wide ROMs
-        making big-endian 16-bit words are map="01" (this part is the first
-        byte) and map="10".  Build the image with BOTH tools/mra_build.py and
-        the standard `mra` tool and check they agree, then check the result
-        against the bytes MAME hands the CPU with tools/verify_rom.py; do not
-        reason about it.  METHODOLOGY section 5.7.
+        Image layout (byte offsets), every region on a power-of-two boundary
+        and no padding anywhere.  target/pocket/moomesa_mem.sv, sim/tb_mem.cpp
+        and tools/verify_rom.py carry the same numbers:
 
-        The image layout must match target/pocket/moomesa_mem.sv and
-        sim/tb_mem.cpp.
+          0x000000  8 MB   sprite ROM (K053246 region): 151a10/a11/a12/a13,
+                           16 bits each into 64-bit words
+          0x800000  2 MB   tile ROM (K056832 region): 151a05/a06, 16 bits each
+                           into 32-bit words
+          0xA00000  2 MB   K054539 samples: 151a08
+          0xC00000  1 MB   68000: 151b01/151eab02 (program, CPU 000000) then
+                           151a03/151a04 (data, CPU 100000), byte-interleaved
+          0xD00000  256 KB Z80: 151a07
+          0xD40000  128 B  default EEPROM contents: moomesa.nv
+
+        Interleave maps read RIGHT TO LEFT: the rightmost digit is the output
+        word's first byte, and its value is the 1-based byte of that part.
     -->
-    <name>Cowboys of Moo Mesa</name>
+    <name>Wild West C.O.W.-Boys of Moo Mesa (ver EAB)</name>
     <setname>moomesa</setname>
     <rbf>moomesa</rbf>
-    <mameversion>0000</mameversion>
-    <year>1980</year>
-    <manufacturer>MANUFACTURER</manufacturer>
-    <switches default="ff,ff"/>
-    <rom index="0" zip="moomesa.zip" md5="none">
-        <!-- <part name="prog0.bin" crc="00000000"/> -->
+    <mameversion>0288</mameversion>
+    <year>1992</year>
+    <manufacturer>Konami</manufacturer>
+    <players>4</players>
+    <joystick>8-way</joystick>
+    <rotation>horizontal</rotation>
+    <region>World</region>
+    <rom index="0" zip="moomesa.zip" md5="0ebb990422cb6b7c9c067b11450fd638">
+        <interleave output="64">
+            <part name="151a10.b8"  crc="376c64f1" map="00000021"/>
+            <part name="151a11.a8"  crc="e7f49225" map="00002100"/>
+            <part name="151a12.b10" crc="4978555f" map="00210000"/>
+            <part name="151a13.a10" crc="4771f525" map="21000000"/>
+        </interleave>
+        <interleave output="32">
+            <part name="151a05.t8"  crc="bc616249" map="0021"/>
+            <part name="151a06.t10" crc="38dbcac1" map="2100"/>
+        </interleave>
+        <part name="151a08.b6" crc="962251d7"/>
+        <interleave output="16">
+            <part name="151b01.q5"   crc="fb2fa298" map="01"/>
+            <part name="151eab02.q6" crc="37b30c01" map="10"/>
+        </interleave>
+        <interleave output="16">
+            <part name="151a03.t5" crc="c896d3ea" map="01"/>
+            <part name="151a04.t6" crc="3b24706a" map="10"/>
+        </interleave>
+        <part name="151a07.f5" crc="cde247fc"/>
+        <part name="moomesa.nv" crc="7bd904a8"/>
     </rom>
 </misterromdescription>

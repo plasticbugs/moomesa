@@ -10,11 +10,9 @@
 //
 // Replace the inside; keep the outside.  The port list is the contract with
 // target/pocket/core_top.sv and with the benches in sim/, and it is shaped
-// the way these boards usually are: a 16-bit program ROM, a byte-wide sound
-// ROM, graphics read a word at a time by a line renderer and a tile at a time
-// by a sprite engine, and a tilemap RAM in the Pocket's SRAM.  Drop what the
-// board does not have; add nothing the platform side does not already carry
-// without reading docs/core-design.md first.
+// the way this board is: a 16-bit 68000 ROM (cached by the memory module), a
+// byte-wide Z80 ROM and sample ROM, 32-bit tile-ROM rows and 64-bit sprite-ROM
+// rows.  Every RAM of the board is block RAM inside the core.
 //------------------------------------------------------------------------------
 `default_nettype none
 
@@ -25,18 +23,16 @@ module moomesa_core (
     input  logic        pix_sync,       // see clk_enables.sv
 
     // ---------------- memory, all through target/pocket/moomesa_mem.sv
-    output logic        mrom_req,  output logic [18:1] mrom_addr,
+    output logic        mrom_req,  output logic [19:1] mrom_addr,   // 68000 ROM, image-relative
     input  logic        mrom_ack,  input  logic [15:0] mrom_q,
-    output logic        srom_req,  output logic [15:0] srom_addr,
+    output logic        srom_req,  output logic [17:0] srom_addr,   // Z80 ROM
     input  logic        srom_ack,  input  logic  [7:0] srom_q,
-    output logic        gfxl_req,  output logic [17:0] gfxl_addr,
-    input  logic        gfxl_ack,  input  logic [31:0] gfxl_q,
-    output logic        gfxs_req,  output logic [17:0] gfxs_addr,
-    input  logic        gfxs_ack,  input  logic [31:0] gfxs_q,
-    output logic        vram_req,  output logic        vram_we,
-    output logic [14:0] vram_addr, output logic [15:0] vram_din,
-    output logic  [1:0] vram_ben,
-    input  logic        vram_ack,  input  logic [15:0] vram_q,
+    output logic        pcm_req,   output logic [20:0] pcm_addr,    // K054539 samples
+    input  logic        pcm_ack,   input  logic  [7:0] pcm_q,
+    output logic        tile_req,  output logic [18:0] tile_addr,   // tile ROM, 32-bit rows
+    input  logic        tile_ack,  input  logic [31:0] tile_q,
+    output logic        spr_req,   output logic [19:0] spr_addr,    // sprite ROM, 64-bit rows
+    input  logic        spr_ack,   input  logic [63:0] spr_q,
 
     // ---------------- inputs, active low as arcade boards read them
     input  logic  [7:0] dswa, dswb,
@@ -145,28 +141,25 @@ module moomesa_core (
     // shows the first word of each -- which proves the path, not the image;
     // sim/run_mem.sh proves the image.  A real core's CPUs and video engines
     // drive these ports instead.
-    typedef enum logic [2:0] { M_PROG, M_SND, M_GFXL, M_IDLE } mst_t;
+    typedef enum logic [2:0] { M_PROG, M_SND, M_TILE, M_IDLE } mst_t;
     mst_t mst;
     always_ff @(posedge clk) begin
         if (rst) begin
-            mst <= M_PROG; mrom_req <= 1'b0; srom_req <= 1'b0; gfxl_req <= 1'b0;
+            mst <= M_PROG; mrom_req <= 1'b0; srom_req <= 1'b0; tile_req <= 1'b0;
         end else case (mst)
             M_PROG: begin mrom_req <= 1'b1; if (mrom_ack) begin mrom_req <= 1'b0; mst <= M_SND;  end end
-            M_SND:  begin srom_req <= 1'b1; if (srom_ack) begin srom_req <= 1'b0; mst <= M_GFXL; end end
-            M_GFXL: begin gfxl_req <= 1'b1; if (gfxl_ack) begin gfxl_req <= 1'b0; mst <= M_IDLE; end end
+            M_SND:  begin srom_req <= 1'b1; if (srom_ack) begin srom_req <= 1'b0; mst <= M_TILE; end end
+            M_TILE: begin tile_req <= 1'b1; if (tile_ack) begin tile_req <= 1'b0; mst <= M_IDLE; end end
             default: ;
         endcase
     end
     assign mrom_addr = '0;
     assign srom_addr = '0;
-    assign gfxl_addr = '0;
-    assign gfxs_req  = 1'b0;
-    assign gfxs_addr = '0;
-    assign vram_req  = 1'b0;
-    assign vram_we   = 1'b0;
-    assign vram_addr = '0;
-    assign vram_din  = '0;
-    assign vram_ben  = 2'b00;
+    assign tile_addr = '0;
+    assign pcm_req   = 1'b0;
+    assign pcm_addr  = '0;
+    assign spr_req   = 1'b0;
+    assign spr_addr  = '0;
 
     // no CPU yet: nothing to halt, nothing on the bus, nothing to watch
     assign dbg_halted     = 1'b0;
@@ -176,7 +169,7 @@ module moomesa_core (
     assign watchdog_reset = 1'b0;
 
     wire _unused = &{1'b0, cen_phi1, cen_phi2, cen_z80, cen_ym, dswa, dswb, in1, in2,
-                     mrom_q, srom_q, gfxl_q, gfxs_ack, gfxs_q, vram_ack, vram_q, 1'b0};
+                     mrom_q, srom_q, tile_q, pcm_ack, pcm_q, spr_ack, spr_q, 1'b0};
 endmodule
 
 `default_nettype wire

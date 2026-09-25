@@ -885,10 +885,12 @@ module core_top
     wire g_sram_slow_wr =  mod_sw1[7];
 
     // the core's memory ports
-    wire        mrom_req, mrom_ack;  wire [18:1] mrom_addr;  wire [15:0] mrom_q;
-    wire        srom_req, srom_ack;  wire [15:0] srom_addr;  wire  [7:0] srom_q;
-    wire        gfxl_req, gfxl_ack;  wire [17:0] gfxl_addr;  wire [31:0] gfxl_q;
-    wire        gfxs_req, gfxs_ack;  wire [17:0] gfxs_addr;  wire [31:0] gfxs_q;
+    wire        mrom_req, mrom_ack;  wire [19:1] mrom_addr;  wire [15:0] mrom_q;
+    wire        srom_req, srom_ack;  wire [17:0] srom_addr;  wire  [7:0] srom_q;
+    wire        pcm_req,  pcm_ack;   wire [20:0] pcm_addr;   wire  [7:0] pcm_q;
+    wire        tile_req, tile_ack;  wire [18:0] tile_addr;  wire [31:0] tile_q;
+    wire        spr_req,  spr_ack;   wire [19:0] spr_addr;   wire [63:0] spr_q;
+    wire [15:0] mrom_misses;
     wire        vram_req, vram_we, vram_ack;
     wire [14:0] vram_addr;  wire [15:0] vram_din, vram_q;  wire [1:0] vram_ben;
 
@@ -910,8 +912,6 @@ module core_top
     //! the test pattern, with the panel still reading a pass (METHODOLOGY
     //! 5.25).  It runs after the load, and its addresses sit either side of
     //! the port's top address line (A14 on this 15-bit port).
-    wire        cv_req, cv_we, cv_ack;
-    wire [14:0] cv_addr;  wire [15:0] cv_din;  wire [1:0] cv_ben;
     wire [15:0] sram_rd0, sram_rd1;
     wire        sram_done, tv_req, tv_we;
     wire [16:0] tv_addr17;
@@ -923,12 +923,13 @@ module core_top
         .done(sram_done), .rd0(sram_rd0), .rd1(sram_rd1)
     );
 
-    assign vram_req  = sram_done ? cv_req  : tv_req;
-    assign vram_we   = sram_done ? cv_we   : tv_we;
-    assign vram_addr = sram_done ? cv_addr : tv_addr;
-    assign vram_din  = sram_done ? cv_din  : tv_din;
-    assign vram_ben  = sram_done ? cv_ben  : 2'b11;
-    assign cv_ack    = sram_done ? vram_ack : 1'b0;
+    //! The game keeps no RAM in the SRAM (every RAM of the board is block RAM
+    //! in the core), so after its test the port is idle.
+    assign vram_req  = sram_done ? 1'b0 : tv_req;
+    assign vram_we   = tv_we;
+    assign vram_addr = tv_addr;
+    assign vram_din  = tv_din;
+    assign vram_ben  = 2'b11;
 
     moomesa_mem u_mem (
         .clk(clk_sys), .clk_sdram(clk_sdram), .init(mem_init), .ready(mem_ready),
@@ -937,10 +938,12 @@ module core_top
         .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data), .dl_active(ioctl_isROM),
         .mrom_req(mrom_req), .mrom_addr(mrom_addr), .mrom_ack(mrom_ack), .mrom_q(mrom_q),
         .srom_req(srom_req), .srom_addr(srom_addr), .srom_ack(srom_ack), .srom_q(srom_q),
-        .gfxl_req(gfxl_req), .gfxl_addr(gfxl_addr), .gfxl_ack(gfxl_ack), .gfxl_q(gfxl_q),
-        .gfxs_req(gfxs_req), .gfxs_addr(gfxs_addr), .gfxs_ack(gfxs_ack), .gfxs_q(gfxs_q),
+        .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
+        .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
+        .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
         .vram_req(vram_req), .vram_we(vram_we), .vram_addr(vram_addr),
         .vram_din(vram_din), .vram_ben(vram_ben), .vram_ack(vram_ack), .vram_q(vram_q),
+        .mrom_misses(mrom_misses),
         .SDRAM_DQ(dram_dq), .SDRAM_A(dram_a), .SDRAM_BA(dram_ba),
         .SDRAM_DQML(dram_dqm[0]), .SDRAM_DQMH(dram_dqm[1]),
         .SDRAM_CLK(dram_clk), .SDRAM_CKE(dram_cke),
@@ -975,10 +978,9 @@ module core_top
         .clk(clk_sys), .rst(g_reset), .pause(pause_core), .pix_sync(pix_sync),
         .mrom_req(mrom_req), .mrom_addr(mrom_addr), .mrom_ack(mrom_ack), .mrom_q(mrom_q),
         .srom_req(srom_req), .srom_addr(srom_addr), .srom_ack(srom_ack), .srom_q(srom_q),
-        .gfxl_req(gfxl_req), .gfxl_addr(gfxl_addr), .gfxl_ack(gfxl_ack), .gfxl_q(gfxl_q),
-        .gfxs_req(gfxs_req), .gfxs_addr(gfxs_addr), .gfxs_ack(gfxs_ack), .gfxs_q(gfxs_q),
-        .vram_req(cv_req), .vram_we(cv_we), .vram_addr(cv_addr),
-        .vram_din(cv_din), .vram_ben(cv_ben), .vram_ack(cv_ack), .vram_q(vram_q),
+        .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
+        .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
+        .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
         .dswa(g_dswa), .dswb(g_dswb),
         .in0(g_in0), .in1(g_in1), .in2(g_in2),
         .rgb(g_rgb), .hsync(g_hs), .vsync(g_vs),
@@ -1030,7 +1032,7 @@ module core_top
         else begin
             if (mrom_ack && !first_prog_v) begin first_prog <= mrom_q; first_prog_v <= 1'b1; end
             if (srom_ack && !first_snd_v)  begin first_snd  <= srom_q; first_snd_v  <= 1'b1; end
-            if (gfxl_ack && !first_gfx_v)  begin first_gfx  <= gfxl_q[31:24]; first_gfx_v <= 1'b1; end
+            if (tile_ack && !first_gfx_v)  begin first_gfx  <= tile_q[31:24]; first_gfx_v <= 1'b1; end
         end
     end
 
