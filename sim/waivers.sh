@@ -32,7 +32,7 @@ set -f
   echo '// in the source with the reason on the line above it.'
   for _r in $_rules; do
       verilator --lint-only "-Wno-$_r" "$_probe/lintprobe.v" >/dev/null 2>&1 || continue
-      for _f in '*/cpu-fx68k/*' '*/cpu-tv80/*' '*/sound-jt03/*' '*/sound-jt49/*'; do
+      for _f in '*/cpu-fx68k/*' '*/cpu-tv80/*' '*/sound-jt51/*' '*/eeprom-jteeprom/*'; do
           echo "lint_off -rule $_r -file \"$_f\""
       done
   done

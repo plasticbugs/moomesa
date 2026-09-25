@@ -33,3 +33,4 @@ artifacts/**/*.rgb
 # Quartus byproducts
 projects/c5_pin_model_dump.txt
 projects/*.qws
+sim/*.mem

@@ -23,7 +23,7 @@ verilator --cc --exe --build -j "${JOBS:-8}" -O2 \
     -Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
     -Wno-PINCONNECTEMPTY -Wno-TIMESCALEMOD --no-assert-case \
     -Wno-BLKSEQ -Wno-MULTIDRIVEN -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-SYNCASYNCNET \
-    "$WAIVERS" --top-module tb_system_top -Mdir obj_system \
+    "$WAIVERS" -I"$root"/rtl --top-module tb_system_top -Mdir obj_system \
     "$root"/rtl/*.sv $MODS \
     "$root"/target/pocket/moomesa_mem.sv "$root"/target/pocket/sdram_ctrl.sv \
     "$root"/target/pocket/sram_port.sv \

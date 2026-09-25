@@ -20,7 +20,7 @@ PROBE=$(mktemp -d)
 trap 'rm -rf "$PROBE"' EXIT
 echo 'module lintprobe; endmodule' > "$PROBE/lintprobe.v"
 
-OPTS="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-TIMESCALEMOD"
+OPTS="-Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-TIMESCALEMOD -I$root/rtl"
 for w in UNUSEDPARAM PINCONNECTEMPTY; do
     verilator --lint-only "-Wno-$w" "$PROBE/lintprobe.v" >/dev/null 2>&1 \
         && OPTS="$OPTS -Wno-$w"
