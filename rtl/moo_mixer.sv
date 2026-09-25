@@ -118,7 +118,8 @@ module moo_mixer (
     wire        mixpri = r338[15][1];
     // set_alpha_level(1): the low byte of PBLEND, 5 bits expanded to 8
     wire  [4:0] mixlv  = r338[13][4:0];
-    wire  [7:0] alpha  = mixpri ? {mixlv, mixlv[4:2]} : 8'hFF;
+    logic [7:0] alpha;                  // registered: it feeds the blend multipliers
+    always_ff @(posedge clk) alpha <= mixpri ? {mixlv, mixlv[4:2]} : 8'hFF;
 
     // ------------------------------------------------------------ palette
     // 2048 x 32, xRGB_888: word 2i = {x, R}, word 2i+1 = {G, B}

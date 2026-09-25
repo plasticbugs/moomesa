@@ -173,7 +173,7 @@ module k054539 (
 
     // ------------------------------------------------------------ the pass
     typedef enum logic [4:0] {
-        P_IDLE, P_RV0, P_RV1, P_RV2, P_CH, P_RD, P_RDW, P_SETUP, P_STEP, P_FETCH, P_FWAIT,
+        P_IDLE, P_RV0, P_RV1, P_RV2, P_CH, P_RD, P_RDW, P_SETUP, P_GAIN, P_STEP, P_FETCH, P_FWAIT,
         P_BYTE, P_ENDCHK, P_DONE, P_REVR, P_REVT, P_REVW, P_NEXT, P_OUT, P_ZROM, P_ZRAM
     } pst_t;
     pst_t ps;
@@ -259,10 +259,18 @@ module k054539 (
             // ---- channel ch
             P_CH: begin
                 if (!r22c[ch]) ps <= P_NEXT;
-                else begin ri <= 4'd0; ra <= {2'b00, ch, 5'd0}; ps <= P_RD; end
+                else begin
+                    ri <= 4'd0; ra <= {2'b00, ch, 5'd0}; ps <= P_RD;
+                    // the channel's saved state, picked out now so P_SETUP
+                    // only chooses between it and a restart
+                    sv_pos <= c_pos[ch]; sv_frac <= c_frac[ch]; sv_val <= c_val[ch]; sv_pval <= c_pval[ch];
+                    sv_reg <= 32'(pos[ch]);
+                end
             end
             P_RD: begin
                 // fetch 00-0A of the channel and its two bytes at 200 + 2 ch
+                // (the Z80 is held off while busy, so pos[ch] cannot move)
+                sv_restart <= (sv_reg != sv_pos);
                 ps <= P_RDW;
             end
             P_RDW: begin
@@ -276,17 +284,13 @@ module k054539 (
                 end
             end
             P_SETUP: begin
-                logic [7:0] vol, bval;
-                logic [3:0] p;
+                // first half: indices and the channel's saved state
                 logic [13:0] rd;
                 logic signed [31:0] d;
-                vol = cr[3];
-                bval = (9'(cr[3]) + 9'(cr[4]) > 9'd255) ? 8'd255 : 8'(cr[3] + cr[4]);
-                p = panidx(cr[5]);
-                lg  <= 17'((33'(k539_vol(vol)) * 33'(k539_pan(p))) >> 16);
-                rg  <= 17'((33'(k539_vol(vol)) * 33'(k539_pan(4'd14 - p))) >> 16);
-                rbg <= k539_vol(bval) >> 1;
-                rd = 14'(({cr[7], cr[6]} >> 3) + {3'd0, rvpos});
+                su_vol  <= cr[3];
+                su_bval <= (9'(cr[3]) + 9'(cr[4]) > 9'd255) ? 8'd255 : 8'(cr[3] + cr[4]);
+                su_pan  <= panidx(cr[5]);
+                rd = 14'(({cr[7], cr[6]} >> 3) + {1'b0, rvpos});
                 widx <= 13'(rd + {1'b0, rvpos});
                 typ <= cr[11][3:2];
                 lpf <= cr[12][0];
@@ -295,11 +299,18 @@ module k054539 (
                 if (cr[11][5]) begin delta <= -d; fdelta <= 32'sh10000; pdelta <= -32'sd1; end
                 else begin delta <= d; fdelta <= -32'sh10000; pdelta <= 32'sd1; end
                 // a changed position register restarts the channel's state
-                if (32'(pos[ch]) != c_pos[ch]) begin
-                    wpos <= 32'(pos[ch]); wfrac <= 32'sd0; wval <= 16'sd0; wpval <= 16'sd0;
+                if (sv_restart) begin
+                    wpos <= sv_reg; wfrac <= 32'sd0; wval <= 16'sd0; wpval <= 16'sd0;
                 end else begin
-                    wpos <= c_pos[ch]; wfrac <= c_frac[ch]; wval <= c_val[ch]; wpval <= c_pval[ch];
+                    wpos <= sv_pos; wfrac <= sv_frac; wval <= sv_val; wpval <= sv_pval;
                 end
+                ps <= P_GAIN;
+            end
+            P_GAIN: begin
+                // second half: the gains, voltab * pantab >> 16 and voltab[bval] / 2
+                lg  <= 17'((33'(k539_vol(su_vol)) * 33'(k539_pan(su_pan))) >> 16);
+                rg  <= 17'((33'(k539_vol(su_vol)) * 33'(k539_pan(4'd14 - su_pan))) >> 16);
+                rbg <= k539_vol(su_bval) >> 1;
                 ps <= P_STEP;
                 second <= 1'b0;
             end
@@ -426,6 +437,11 @@ module k054539 (
     logic [7:0] lo_byte;
     logic       zr_done;
     logic signed [33:0] rv_pr;
+    logic  [7:0] su_vol, su_bval;
+    logic signed [31:0] sv_pos, sv_frac, sv_reg;
+    logic signed [15:0] sv_val, sv_pval;
+    logic        sv_restart;
+    logic  [3:0] su_pan;
     logic signed [15:0] rv_add;
     logic        tick;
     logic [15:0] pcyc;

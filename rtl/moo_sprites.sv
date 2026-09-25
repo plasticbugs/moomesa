@@ -248,7 +248,7 @@ module moo_sprites (
     // ------------------------------------------------------------ line engine
     typedef enum logic [4:0] {
         E_IDLE, E_NEXT, E_S1, E_S2, E_L1, E_L2, E_Z1, E_G1, E_G2, E_V,
-        E_VC, E_R0, E_R1, E_R2, E_R3, E_C0, E_CA, E_C1, E_C2, E_PIX, E_NX, E_CLR
+        E_VC, E_R0, E_R1, E_R2, E_R3, E_C0, E_CA, E_CM, E_C1, E_C2, E_PIX, E_NX, E_CLR
     } est_t;
     est_t es;
     logic  [8:0] Y;
@@ -269,6 +269,7 @@ module moo_sprites (
     logic        fy, dbl, pass;
     logic  [3:0] row_a, row_b;
     logic signed [16:0] sx, c_s0, c_s1, v_t0, v_t1;
+    logic [10:0] pmul;
     logic [11:0] zw;
     logic        fx;
     logic  [5:0] tx;
@@ -484,12 +485,17 @@ module moo_sprites (
                 rom_req  <= 1'b1;
                 pi  <= (sx < 17'sd40) ? 17'sd40 - sx : 17'sd0;
                 pi1 <= (sx + 17'(zw) - 17'sd1 > 17'sd423) ? 17'sd423 - sx : 17'(zw) - 17'sd1;
+                es <= E_CM;
+            end
+            E_CM: begin
+                // the first source column's multiplier, registered ahead of the multiply
+                pmul <= fx ? 11'(zw - 12'd1 - 12'(pi)) : 11'(pi);
                 es <= E_C2;
             end
             E_C2: begin
                 // r_q is dx; the fetch is in flight
                 dx <= r_q;
-                acc  <= 34'(fx ? 11'(zw - 12'd1 - 12'(pi)) : 11'(pi)) * 34'(r_q);
+                acc  <= 34'(pmul) * 34'(r_q);
                 step <= fx ? (34'sd0 - 34'(r_q)) : 34'(r_q);
                 if (rom_ack) begin rom_req <= 1'b0; rowd <= rom_q; es <= E_PIX; end
                 else es <= E_C2;
