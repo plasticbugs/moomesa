@@ -34,3 +34,4 @@ artifacts/**/*.rgb
 projects/c5_pin_model_dump.txt
 projects/*.qws
 sim/*.mem
+/snap/
