@@ -889,3 +889,9 @@ set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_we_n
 # is a real silicon failure, not lost margin, so let the fitter pad every
 # path, not just the pins.
 set_global_assignment -name OPTIMIZE_HOLD_TIMING "ALL PATHS"
+
+# No automatic shift-register-to-RAM: it packed the platform's clock-domain
+# synchronisers (data_io's synch_3) into block RAM together with jt51's
+# pipeline shift registers, which both defeats the synchronisers and moves
+# jt51's paths out from under their multicycle (projects/moomesa_pocket.sdc).
+set_global_assignment -name AUTO_SHIFT_REGISTER_RECOGNITION OFF
