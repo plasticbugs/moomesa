@@ -349,10 +349,12 @@ module moomesa_core (
         if (e_we) eep[e_addr] <= e_din;
         e_q <= eep[e_addr];
     end
+    // second port: the download's default contents, the save slot's load
+    // and its unload -- one address, so it stays a block RAM port
+    wire [6:0] eb_addr = dl_eep ? dl_addr[6:0] : nv_addr;
     always_ff @(posedge clk) begin
-        if (dl_eep) eep[dl_addr[6:0]] <= dl_data;
-        else if (nv_we) eep[nv_addr] <= nv_din;
-        nv_dout <= eep[nv_addr];
+        if (dl_eep || nv_we) eep[eb_addr] <= dl_eep ? dl_data : nv_din;
+        nv_dout <= eep[eb_addr];
     end
     jt5911 #(.PROG(0)) u_eeprom (
         .rst(rst), .clk(clk),

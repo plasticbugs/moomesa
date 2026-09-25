@@ -30,9 +30,12 @@ module dbg_fault (
     logic [23:0] h0, h1, hio;
     wire         start   = bus && !bus_d;
     wire [23:0]  a       = {addr, 1'b0};
-    wire         is_rom  = (addr[23:19] == 5'd0);
-    wire         is_ram  = (addr[23:14] == 10'b00_1000_0000);
-    wire         is_vec  = is_rom && (a[18:8] == 11'd0);
+    // Moo Mesa: program ROM 000000-07FFFF, data ROM 100000-17FFFF, work RAM
+    // 180000-18FFFF (docs/hardware.md 2)
+    wire         is_prog = (addr[23:19] == 5'd0);
+    wire         is_rom  = is_prog || (addr[23:19] == 5'b00010);
+    wire         is_ram  = (addr[23:16] == 8'h18);
+    wire         is_vec  = is_prog && (a[18:8] == 11'd0);
     wire         benign  = (a[7:3] == 5'd0) || (a[7:3] == 5'b01110);   // 00-07, 70-77
     wire         bad     = start && is_vec && !benign;
 

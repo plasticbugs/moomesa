@@ -11,6 +11,70 @@
                 "value": 1
             },
             {
+                "name": "Sound Output",
+                "id": 10,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF1000000",
+                "defaultval": 0,
+                "mask": "0xFFFFFFFE",
+                "options": [
+                    {
+                        "name": "Stereo",
+                        "value": "0x00000000"
+                    },
+                    {
+                        "name": "Mono",
+                        "value": "0x00000001"
+                    }
+                ]
+            },
+            {
+                "name": "Coin Slots",
+                "id": 11,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF1000000",
+                "defaultval": 0,
+                "mask": "0xFFFFFFFD",
+                "options": [
+                    {
+                        "name": "Common",
+                        "value": "0x00000000"
+                    },
+                    {
+                        "name": "Independent",
+                        "value": "0x00000002"
+                    }
+                ]
+            },
+            {
+                "name": "Cabinet Players",
+                "id": 12,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "address": "0xF1000000",
+                "defaultval": 0,
+                "mask": "0xFFFFFFF3",
+                "options": [
+                    {
+                        "name": "4",
+                        "value": "0x00000000"
+                    },
+                    {
+                        "name": "2",
+                        "value": "0x00000004"
+                    },
+                    {
+                        "name": "3",
+                        "value": "0x0000000C"
+                    }
+                ]
+            },
+            {
                 "name": "Screen Shape",
                 "id": 60,
                 "type": "list",
@@ -129,28 +193,6 @@
                 "defaultval": 0,
                 "value": "0x00000020",
                 "mask": "0xFFFFFFDF"
-            },
-            {
-                "name": "SRAM read late",
-                "id": 93,
-                "type": "check",
-                "enabled": true,
-                "persist": false,
-                "address": "0xF2000000",
-                "defaultval": 0,
-                "value": "0x00000080",
-                "mask": "0xFFFFFF7F"
-            },
-            {
-                "name": "SRAM long writes",
-                "id": 94,
-                "type": "check",
-                "enabled": true,
-                "persist": false,
-                "address": "0xF2000000",
-                "defaultval": 0,
-                "value": "0x00008000",
-                "mask": "0xFFFF7FFF"
             }
         ]
     }

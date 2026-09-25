@@ -300,8 +300,8 @@ module moo_sprites (
         spen = q[63 - 4 * int'(n) -: 4];
     endfunction
 
-    wire signed [16:0] offx = 17'(signed'(16'({k246[0], k246[1]})));
-    wire signed [16:0] offy = 17'(signed'(16'({k246[2], k246[3]})));
+    wire signed [16:0] offx = 17'($signed(16'({k246[0], k246[1]})));
+    wire signed [16:0] offy = 17'($signed(16'({k246[2], k246[3]})));
     wire  [5:0] pri = w6[9:4];
     wire  [3:0] pen = spen(rowd, 4'(acc >>> 16));
     wire signed [16:0] X = sx + pi;
@@ -345,7 +345,7 @@ module moo_sprites (
                 begin
                     logic [9:0] ox1, oy1;
                     ox1 = 10'(17'(wx) - offx);
-                    oy1 = 10'(-17'(wy) - offy);
+                    oy1 = 10'(17'sd0 - 17'(wy) - offy);
                     ox <= (ox1 >= 10'd640 ? 17'(ox1) - 17'sd1024 : 17'(ox1)) - 17'sd47;
                     oy <= (oy1 >= 10'd512 ? 17'(oy1) - 17'sd1024 : 17'(oy1)) - 17'sd23;
                 end
@@ -440,7 +440,7 @@ module moo_sprites (
                 // r_q is dx; the fetch is in flight
                 dx <= r_q;
                 acc  <= fx ? 34'(34'(zw - 12'd1) - 34'(pi)) * 34'(r_q) : 34'(pi) * 34'(r_q);
-                step <= fx ? -34'(r_q) : 34'(r_q);
+                step <= fx ? (34'sd0 - 34'(r_q)) : 34'(r_q);
                 if (rom_ack) begin rom_req <= 1'b0; rowd <= rom_q; es <= E_PIX; end
                 else es <= E_C2;
             end

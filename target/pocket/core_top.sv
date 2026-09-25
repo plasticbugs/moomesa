@@ -529,6 +529,7 @@ module core_top
     //! APF Bridge Read Data
     //! ------------------------------------------------------------------------
     wire [31:0] int_bridge_rd_data;
+    wire [31:0] sv_bridge_rd_data;
     always_comb begin
         casex(bridge_addr)
             32'hF0000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Reset
@@ -538,6 +539,7 @@ module core_top
             32'hF3000000: begin bridge_rd_data <= int_bridge_rd_data;   end // A/V Filters
             32'hF4000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Extra DIP Switches
             32'hF8xxxxxx: begin bridge_rd_data <= cmd_bridge_rd_data;   end // APF Bridge (Reserved)
+            32'h2xxxxxxx: begin bridge_rd_data <= sv_bridge_rd_data;    end // the save slot (EEPROM)
             32'hFA000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Status Low  [31:0]
             32'hFB000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Status High [63:32]
             default:      begin bridge_rd_data <= 0;                    end
@@ -843,37 +845,44 @@ module core_top
     wire [24:0] dl_addr     = ioctl_addr[24:0];
     wire  [7:0] dl_data     = ioctl_data;
 
-    //! Controls, active low as arcade boards read them.  IN0 and IN1 are the
-    //! two players: bit 0 up, 1 down, 2 left, 3 right, 4 button 1, 5 button 2.
-    //! IN2 is the system port: bit 1 service, 2 coin 1, 3 coin 2, 6 start 1,
-    //! 7 start 2.  REARRANGE THESE to the board's own bit order, from MAME's
-    //! PORT_START blocks -- and write the order into docs/hardware.md first.
-    //!
-    //! A and Y are both button 1 and B and X both button 2, so either thumb
-    //! position works; select inserts a coin.
+    //! Controls (docs/hardware.md 3), active low as the board reads them.
+    //! P1..P4: bit 0 left, 1 right, 2 up, 3 down, 4 button 1 (shoot),
+    //! 5 button 2 (jump), 6 unused (high), 7 start.  IN0: bits 0-3 coin 1-4,
+    //! 4-7 service 1-4.  A and Y are both button 1, B and X both button 2, so
+    //! either thumb position works; select inserts that player's coin.
+    //! Players 1 and 2 come through the gamepad helper; 3 and 4 (a docked
+    //! Pocket's third and fourth controllers) straight from cont3/cont4_key,
+    //! brought into clk_sys here.
     wire p1_b1 = p1_btn_a | p1_btn_y, p1_b2 = p1_btn_b | p1_btn_x;
     wire p2_b1 = p2_btn_a | p2_btn_y, p2_b2 = p2_btn_b | p2_btn_x;
     wire svc   = mod_sw1[0] | svc_sw;
+    // cont_key: 0 up, 1 down, 2 left, 3 right, 4 A, 5 B, 6 X, 7 Y, 14 select, 15 start
+    logic [15:0] c3_s1, c3_s2, c4_s1, c4_s2;
+    always_ff @(posedge clk_sys) begin
+        c3_s1 <= cont3_key[15:0]; c3_s2 <= c3_s1;
+        c4_s1 <= cont4_key[15:0]; c4_s2 <= c4_s1;
+    end
+    function automatic [7:0] kpad(input st, input b2, input b1, input dn, input up, input rt, input lf);
+        kpad = ~{st, 1'b0, b2, b1, dn, up, rt, lf};
+    endfunction
+    wire [7:0] g_p1 = kpad(p1_start, p1_b2, p1_b1, p1_down | j1_down, p1_up | j1_up,
+                           p1_right | j1_right, p1_left | j1_left);
+    wire [7:0] g_p2 = kpad(p2_start, p2_b2, p2_b1, p2_down | j2_down, p2_up | j2_up,
+                           p2_right | j2_right, p2_left | j2_left);
+    wire [7:0] g_p3 = kpad(c3_s2[15], c3_s2[5] | c3_s2[6], c3_s2[4] | c3_s2[7],
+                           c3_s2[1], c3_s2[0], c3_s2[3], c3_s2[2]);
+    wire [7:0] g_p4 = kpad(c4_s2[15], c4_s2[5] | c4_s2[6], c4_s2[4] | c4_s2[7],
+                           c4_s2[1], c4_s2[0], c4_s2[3], c4_s2[2]);
+    wire [7:0] g_in0 = ~{4'b0000, c4_s2[14], c3_s2[14], p2_select, p1_select};
+    wire       g_test_n = !svc;
 
-    wire [7:0] g_in0 = ~{2'b00, p1_b2, p1_b1,
-                          p1_right | j1_right, p1_left | j1_left,
-                          p1_down  | j1_down,  p1_up   | j1_up};
-    wire [7:0] g_in1 = ~{2'b00, p2_b2, p2_b1,
-                          p2_right | j2_right, p2_left | j2_left,
-                          p2_down  | j2_down,  p2_up   | j2_up};
-    wire [7:0] g_in2 = ~{p2_start, p1_start, 2'b00,
-                          p2_select, p1_select, svc, 1'b0};
-
-    //! The two DIP banks.  The menu word starts at zero and is XORed with the
-    //! board's factory setting, so nothing set is the board as it shipped and
-    //! each menu value is only the difference from it -- which also means a
-    //! switch the menu does not expose keeps its factory value instead of
-    //! reading as pressed before the Pocket has written the word.
-    //!   DSWA 0xFF, DSWB 0xFF: REPLACE with the board's factory settings and
-    //!   say here what each means.  Every entry in interact.json must do
-    //!   something on hardware (METHODOLOGY section 5.5).
-    wire [7:0] g_dswa = 8'hFF ^ dip_sw0;
-    wire [7:0] g_dswb = 8'hFF ^ dip_sw1;
+    //! DIP switches SW1:1-4 (IN1 bits 4-7).  The menu word starts at zero and
+    //! is XORed with the factory setting, so nothing set is the board as it
+    //! shipped: bit 0 sound output (0 stereo, 1 mono), bit 1 coin mechanism
+    //! (1 common, 0 independent), bits 2-3 players (10 = four, 11 = two,
+    //! 01 = three).  Factory: stereo, common, four players = 4'b1010.  Every
+    //! other setting is in the game's EEPROM, set in its own service menu.
+    wire [3:0] g_dsw = 4'b1010 ^ dip_sw0[3:0];
 
     //! Bring-up switches from the modifier word (the "Bring-up" entries of
     //! interact.json; take them off the menu for a release, leave them here):
@@ -956,7 +965,10 @@ module core_top
 
     wire        g_pix_ce, g_hs, g_vs, g_de, g_vb, g_hb;
     wire [23:0] g_rgb;
-    wire signed [15:0] g_snd;
+    wire signed [15:0] g_snd_l, g_snd_r;
+    wire  [7:0] g_status;
+    wire [15:0] g_snd_worst;
+    wire  [7:0] g_snd_reads;
     wire        g_halted, g_watchdog;
     wire [23:1] g_dbg_addr;  wire g_dbg_bus, g_dbg_wait;
 
@@ -971,6 +983,88 @@ module core_top
     always @(posedge clk_sys) begin vt_s <= vt; vt_d <= vt_s; end
     wire pix_sync = vt_s ^ vt_d;
 
+    //! ------------------------------------------------------------------
+    //! The save slot: the ER5911's 128 bytes (METHODOLOGY 5.24).
+    //!   data.json slot id 1, bridge address 0x20000000, nonvolatile,
+    //!   parameters bit 5 (initialise on load); its size is data-table entry
+    //!   3 (position 1 * 2 + 1), written above as NV_BYTES.
+    //! Loading: the Pocket writes the file to 0x2xxxxxxx; a data_io keyed to
+    //! that upper nibble turns it into writes of the EEPROM's second port
+    //! (each byte held a few clocks: a RAM write, idempotent).
+    //! Saving: the core asks the Pocket to read the slot (target_dataslot_
+    //! write), which it does through the data_unloader below, two seconds
+    //! after the game last wrote its EEPROM, when the menu opens, and once
+    //! ten seconds after the load -- the Pocket writes back only a slot it
+    //! loaded, so the first file has to be made this way.
+    //! ------------------------------------------------------------------
+    wire        sv_dl, sv_wr;
+    wire [15:0] sv_index;
+    wire [26:0] sv_addr;
+    wire  [7:0] sv_data;
+    data_io #(.MASK(4'h2),.AW(27),.DW(8),.DELAY(DIO_DELAY),.HOLD(DIO_HOLD)) save_data_io
+    (
+        .clk_74a                  ( clk_74a                  ),
+        .clk_memory               ( clk_sys                  ),
+        .dataslot_requestwrite    ( dataslot_requestwrite    ),
+        .dataslot_requestwrite_id ( dataslot_requestwrite_id ),
+        .dataslot_allcomplete     ( dataslot_allcomplete     ),
+        .bridge_endian_little     ( bridge_endian_little     ),
+        .bridge_addr              ( bridge_addr              ),
+        .bridge_wr                ( bridge_wr                ),
+        .bridge_wr_data           ( bridge_wr_data           ),
+        .ioctl_download           ( sv_dl                    ),
+        .ioctl_index              ( sv_index                 ),
+        .ioctl_wr                 ( sv_wr                    ),
+        .ioctl_addr               ( sv_addr                  ),
+        .ioctl_data               ( sv_data                  )
+    );
+    wire        un_rd;
+    wire  [6:0] un_addr;
+    wire  [7:0] g_nv_dout;
+    wire        g_nv_changed;
+    data_unloader #(.ADDRESS_MASK_UPPER_4(4'h2),.ADDRESS_SIZE(7),.READ_MEM_CLOCK_DELAY(2),.INPUT_WORD_SIZE(1)) save_unloader
+    (
+        .clk_74a              ( clk_74a              ),
+        .clk_memory           ( clk_sys              ),
+        .bridge_rd            ( bridge_rd            ),
+        .bridge_endian_little ( bridge_endian_little ),
+        .bridge_addr          ( bridge_addr          ),
+        .bridge_rd_data       ( sv_bridge_rd_data    ),
+        .read_en              ( un_rd                ),
+        .read_addr            ( un_addr              ),
+        .read_data            ( g_nv_dout            )
+    );
+    wire       g_nv_we   = sv_dl && sv_wr && (sv_addr[26:7] == 20'd0);
+    wire [6:0] g_nv_addr = sv_dl ? sv_addr[6:0] : un_addr;
+
+    // when to save, in clk_sys: a toggle carried to clk_74a
+    logic [27:0] sv_timer;          // counts 2 s after the last EEPROM write
+    logic        sv_dirty, sv_tog, sv_loaded_arm, pause_d;
+    logic [29:0] sv_boot;           // 10 s after the load
+    always_ff @(posedge clk_sys) begin
+        pause_d <= pause_core;
+        if (g_nv_changed) begin sv_dirty <= 1'b1; sv_timer <= 28'd192_000_000; end
+        else if (sv_timer != 28'd0) sv_timer <= sv_timer - 28'd1;
+        if (sv_dirty && ((sv_timer == 28'd1) || (pause_core && !pause_d))) begin
+            sv_dirty <= 1'b0; sv_tog <= ~sv_tog;
+        end
+        if (!loaded) begin sv_boot <= 30'd960_000_000; sv_loaded_arm <= 1'b1; end
+        else if (sv_boot != 30'd0) sv_boot <= sv_boot - 30'd1;
+        else if (sv_loaded_arm) begin sv_loaded_arm <= 1'b0; sv_tog <= ~sv_tog; end
+    end
+    logic [2:0] sv_tog_s;
+    always_ff @(posedge clk_74a) begin
+        sv_tog_s <= {sv_tog_s[1:0], sv_tog};
+        target_dataslot_write      <= (sv_tog_s[2] != sv_tog_s[1]);
+        target_dataslot_read       <= 1'b0;
+        target_dataslot_getfile    <= 1'b0;
+        target_dataslot_openfile   <= 1'b0;
+        target_dataslot_id         <= 16'd1;
+        target_dataslot_slotoffset <= 32'd0;
+        target_dataslot_bridgeaddr <= 32'h20000000;
+        target_dataslot_length     <= NV_BYTES;
+    end
+
     moomesa_core u_core (
         //! pause_core is the Pocket's menu being open.  It used to be ORed into
         //! reset here, which held the whole board in reset while the menu was
@@ -981,13 +1075,15 @@ module core_top
         .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
-        .dswa(g_dswa), .dswb(g_dswb),
-        .in0(g_in0), .in1(g_in1), .in2(g_in2),
+        .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data),
+        .nv_addr(g_nv_addr), .nv_we(g_nv_we), .nv_din(sv_data), .nv_dout(g_nv_dout), .nv_changed(g_nv_changed),
+        .p1(g_p1), .p2(g_p2), .p3(g_p3), .p4(g_p4), .in0(g_in0), .test_n(g_test_n), .dsw(g_dsw),
         .rgb(g_rgb), .hsync(g_hs), .vsync(g_vs),
         .hblank(g_hb), .vblank(g_vb), .pix_ce(g_pix_ce), .de(g_de),
-        .snd(g_snd),
+        .snd_l(g_snd_l), .snd_r(g_snd_r),
         .dbg_halted(g_halted), .dbg_addr(g_dbg_addr), .dbg_bus(g_dbg_bus), .dbg_wait(g_dbg_wait),
-        .watchdog_reset(g_watchdog)
+        .watchdog_reset(g_watchdog),
+        .dbg_status(g_status), .dbg_snd_worst(g_snd_worst), .dbg_snd_reads(g_snd_reads)
     );
 
     //! Screen shape from the Interact menu.  The aspect in video.json
@@ -1007,7 +1103,9 @@ module core_top
     //! person holding the Pocket reads from.
     //!   row 0  1010 1010 | frame count | pll locked, memory ready,
     //!          downloading, all-complete, loaded, core reset, CPU halted,
-    //!          watchdog seen | in2
+    //!          watchdog seen | machine status: IRQ5 seen, IRQ4 seen, 0,
+    //!          K054539 missed a sample, 0, unsupported video mode, tile
+    //!          line missed, sprite line missed
     //!   row 1  first-fault capture: vector | code address before it
     //!   row 2  first word of the program ROM | first sound ROM byte |
     //!          first graphics byte -- the path, not the image
@@ -1057,7 +1155,7 @@ module core_top
         8'b1010_1010, ovl_frames,
         pll_locked_sys, mem_ready, ioctl_download, allc_s,
         loaded, g_reset, g_halted, ovl_wdog,
-        g_in2,
+        g_status,
         // row 1: the vector first fetched in error (00 = none), then the code
         // address just before it
         flt_vec, flt_pc0,
@@ -1102,24 +1200,28 @@ module core_top
     //! ------------------------------------------------------------------
     localparam int SND_DIV = 2000;              // 96 MHz / 48 kHz
     logic [11:0] snd_div = 12'd0;
-    logic signed [15:0] snd_hold = 16'sd0;
+    logic signed [15:0] snd_hold_l = 16'sd0, snd_hold_r = 16'sd0;
     logic        snd_tog = 1'b0;
     always_ff @(posedge clk_sys) begin
         if (snd_div == 12'(SND_DIV - 1)) begin
-            snd_div  <= 12'd0;
-            snd_hold <= g_snd;
-            snd_tog  <= ~snd_tog;
+            snd_div    <= 12'd0;
+            snd_hold_l <= g_snd_l;
+            snd_hold_r <= g_snd_r;
+            snd_tog    <= ~snd_tog;
         end else begin
             snd_div <= snd_div + 12'd1;
         end
     end
     logic [2:0] snd_tog_s = 3'd0;
-    logic signed [15:0] snd_xfer = 16'sd0;
+    logic signed [15:0] snd_xfer_l = 16'sd0, snd_xfer_r = 16'sd0;
     always_ff @(posedge clk_74b) begin
         snd_tog_s <= {snd_tog_s[1:0], snd_tog};
-        if (snd_tog_s[2] != snd_tog_s[1]) snd_xfer <= snd_hold;
+        if (snd_tog_s[2] != snd_tog_s[1]) begin
+            snd_xfer_l <= snd_hold_l;
+            snd_xfer_r <= snd_hold_r;
+        end
     end
-    assign core_snd_l = snd_xfer;
-    assign core_snd_r = snd_xfer;
+    assign core_snd_l = snd_xfer_l;
+    assign core_snd_r = snd_xfer_r;
 
 endmodule

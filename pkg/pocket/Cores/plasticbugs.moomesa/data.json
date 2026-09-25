@@ -12,6 +12,19 @@
                     "rom"
                 ],
                 "address": "0x00000000"
+            },
+            {
+                "name": "Save",
+                "id": 1,
+                "required": false,
+                "parameters": "0x20",
+                "nonvolatile": true,
+                "filename": "moomesa.sav",
+                "extensions": [
+                    "sav"
+                ],
+                "address": "0x20000000",
+                "size_maximum": 128
             }
         ]
     }

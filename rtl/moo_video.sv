@@ -131,10 +131,14 @@ module moo_video (
     logic [31:0] vq_cpu, vq_eng;
     logic [12:0] ve_addr;
     logic        v_we;
+    // byte enables: the attribute word is bytes 3:2, the code word 1:0
+    wire [3:0] v_be = cv_half ? {2'b00, cpu_be} : {cpu_be, 2'b00};
     always_ff @(posedge clk) begin
         if (v_we) begin
-            if (cpu_be[1]) vram[cv_entry][cv_half ? 1 : 3] <= cpu_d[15:8];
-            if (cpu_be[0]) vram[cv_entry][cv_half ? 0 : 2] <= cpu_d[7:0];
+            if (v_be[3]) vram[cv_entry][3] <= cpu_d[15:8];
+            if (v_be[2]) vram[cv_entry][2] <= cpu_d[7:0];
+            if (v_be[1]) vram[cv_entry][1] <= cpu_d[15:8];
+            if (v_be[0]) vram[cv_entry][0] <= cpu_d[7:0];
         end
         vq_cpu <= vram[cv_entry];
     end

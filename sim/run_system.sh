@@ -19,16 +19,18 @@ MODS=$(ls "$root"/modules/*/*.v "$root"/modules/*/*.sv 2>/dev/null || true)
 
 # --no-assert-case: a CPU core may hold a `unique case` that does not match
 # while it is still in reset, which Verilator would otherwise stop on.
-verilator --cc --exe --build -j "${JOBS:-8}" -O2 \
+verilator --cc --exe --build -j "${JOBS:-8}" -O3 --x-assign fast --x-initial fast \
     -Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM \
     -Wno-PINCONNECTEMPTY -Wno-TIMESCALEMOD --no-assert-case \
     -Wno-BLKSEQ -Wno-MULTIDRIVEN -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND -Wno-SYNCASYNCNET \
-    "$WAIVERS" -I"$root"/rtl --top-module tb_system_top -Mdir obj_system \
+    "$WAIVERS" -I"$root"/rtl --top-module tb_system_top -Mdir obj_system -LDFLAGS -lz \
     "$root"/rtl/*.sv $MODS \
     "$root"/target/pocket/moomesa_mem.sv "$root"/target/pocket/sdram_ctrl.sv \
     "$root"/target/pocket/sram_port.sv \
     sdram_model.sv sram_model.sv tb_system_top.sv tb_system.cpp > obj_system.log 2>&1 \
     || { tail -40 obj_system.log; exit 1; }
 
+# fx68k reads its microcode from the working directory
+for f in "$root"/modules/cpu-fx68k/*.mem; do ln -sf "$f" "$here/$(basename "$f")"; done
 mkdir -p "$root/artifacts/system"
 exec ./obj_system/Vtb_system_top "$@" -o "$root/artifacts/system"

@@ -125,11 +125,13 @@ module moo_mixer (
     logic [3:0][7:0] pal [2048];
     logic [31:0] pq_cpu, pq_vid;
     logic [10:0] pv_addr;
+    // byte enables: word 2i is bytes 1:0 of entry i, word 2i+1 bytes 3:2
+    wire [3:0] p_be = pal_we ? (pal_addr[0] ? {pal_be, 2'b00} : {2'b00, pal_be}) : 4'b0000;
     always_ff @(posedge clk) begin
-        if (pal_we) begin
-            if (pal_be[1]) pal[pal_addr[11:1]][{pal_addr[0], 1'b1}] <= pal_d[15:8];
-            if (pal_be[0]) pal[pal_addr[11:1]][{pal_addr[0], 1'b0}] <= pal_d[7:0];
-        end
+        if (p_be[3]) pal[pal_addr[11:1]][3] <= pal_d[15:8];
+        if (p_be[2]) pal[pal_addr[11:1]][2] <= pal_d[7:0];
+        if (p_be[1]) pal[pal_addr[11:1]][1] <= pal_d[15:8];
+        if (p_be[0]) pal[pal_addr[11:1]][0] <= pal_d[7:0];
         pq_cpu <= pal[pal_addr[11:1]];
     end
     always_ff @(posedge clk) pq_vid <= pal[pv_addr];
@@ -154,7 +156,7 @@ module moo_mixer (
         // shadow_table[rgb15]: 5 bits kept, expanded, the delta added (clamped
         // to +-255 by set_shadow_dRGB32), then clipped or wrapped
         logic signed [10:0] v, d;
-        d = 11'(signed'(d9));
+        d = 11'($signed(d9));
         if (d < -11'sd255) d = -11'sd255;
         v = 11'({c[7:3], c[7:5]}) + d;
         if (nc) shade = v[7:0];
@@ -204,7 +206,7 @@ module moo_mixer (
         endcase
     endfunction
     always_comb begin
-        logic [7:0] eA, eF, eM, eB;
+        logic [7:0] eA, eF, eM, eB, cm_s, cm_h;
         logic [2:0] tag;
         eA = tl_q[7:0];
         eB = tl_q[8 * int'(ord[0]) +: 8];
@@ -219,8 +221,10 @@ module moo_mixer (
         n_iM = lidx(eM, ord[1]);
         n_iF = lidx(eF, ord[2]);
         tag = {n_opF, n_opM, n_opB};
-        n_sprv = sp_claim  && !cmask(sp_cdata[1:0])[tag];
-        n_shdv = sp_shadow && !cmask(sp_sdata[1:0])[tag];
+        cm_s = cmask(sp_cdata[1:0]);
+        cm_h = cmask(sp_sdata[1:0]);
+        n_sprv = sp_claim  && !cm_s[tag];
+        n_shdv = sp_shadow && !cm_h[tag];
     end
 
     always_ff @(posedge clk) begin

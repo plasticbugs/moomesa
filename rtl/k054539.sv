@@ -69,7 +69,9 @@ module k054539 (
     wire         latch     = r22f[0];   // UPDATE_AT_KEYON, MAME's default
 
     // ------------------------------------------------------------ reverb RAM
-    // 32 KB, little-endian words: word i = {byte 2i+1, byte 2i}
+    // 32 KB, little-endian words: word i = {byte 2i+1, byte 2i}.  One port:
+    // the pass owns it while `busy`; the Z80's byte accesses (a boot-time
+    // test through 22D) happen only between passes.
     logic [1:0][7:0] ram [16384];
     logic [13:0] rw_a;
     logic [15:0] rw_q, rw_d;
@@ -77,17 +79,15 @@ module k054539 (
     logic [14:0] cb_a;                  // CPU byte address
     logic        cb_we;
     logic  [7:0] cb_d, cb_q;
+    wire  [13:0] ram_a  = busy ? rw_a : cb_a[14:1];
+    wire   [1:0] ram_be = rw_we ? 2'b11 : (cb_we ? (cb_a[0] ? 2'b10 : 2'b01) : 2'b00);
+    wire  [15:0] ram_d  = rw_we ? rw_d : {cb_d, cb_d};
     always_ff @(posedge clk) begin
-        if (rw_we) begin ram[rw_a][1] <= rw_d[15:8]; ram[rw_a][0] <= rw_d[7:0]; end
-        rw_q <= ram[rw_a];
+        if (ram_be[1]) ram[ram_a][1] <= ram_d[15:8];
+        if (ram_be[0]) ram[ram_a][0] <= ram_d[7:0];
+        rw_q <= ram[ram_a];
     end
-    logic [15:0] cb_w;
-    always_ff @(posedge clk) begin
-        if (cb_we && cb_a[0])  ram[cb_a[14:1]][1] <= cb_d;
-        if (cb_we && !cb_a[0]) ram[cb_a[14:1]][0] <= cb_d;
-        cb_w <= ram[cb_a[14:1]];
-    end
-    assign cb_q = cb_a[0] ? cb_w[15:8] : cb_w[7:0];
+    assign cb_q = cb_a[0] ? rw_q[15:8] : rw_q[7:0];
     wire [14:0] ptr_ram = {cur_ptr[16], cur_ptr[13:0]};   // (ptr & 0x3FFF) | (ptr & 0x10000) >> 2
 
     // ------------------------------------------------------------ Z80 side
@@ -250,8 +250,8 @@ module k054539 (
             // ---- reverb tap: lval = rval = rbase[pos]; rbase[pos] = 0
             P_RV0: ps <= P_RV1;
             P_RV1: begin
-                lacc <= 40'(signed'(rw_q)) <<< 16;
-                racc <= 40'(signed'(rw_q)) <<< 16;
+                lacc <= 40'($signed(rw_q)) <<< 16;
+                racc <= 40'($signed(rw_q)) <<< 16;
                 rw_d <= 16'd0; rw_we <= 1'b1;
                 ch <= 3'd0;
                 ps <= P_CH;
@@ -378,8 +378,8 @@ module k054539 (
                     if (pp[0]) fp = fp | 32'sh8000;
                     pp = pp >>> 1;
                 end
-                lacc <= lacc + 40'(wval) * 40'(signed'({1'b0, lg}));
-                racc <= racc + 40'(wval) * 40'(signed'({1'b0, rg}));
+                lacc <= lacc + 40'(wval) * 40'($signed({1'b0, lg}));
+                racc <= racc + 40'(wval) * 40'($signed({1'b0, rg}));
                 c_pos[ch] <= pp; c_frac[ch] <= fp; c_val[ch] <= wval; c_pval[ch] <= wpval;
                 e_posw <= 1'b1; e_ch <= ch; e_pos <= 24'(pp);
                 rw_a <= {1'b0, widx};
@@ -390,8 +390,8 @@ module k054539 (
                 // rbase[...] += int16(cur_val * rbvol), truncated toward zero
                 logic signed [33:0] pr;
                 logic signed [15:0] add;
-                pr = 34'(wval) * 34'(signed'({1'b0, rbg}));
-                add = (pr < 0) ? -16'((-pr) >>> 16) : 16'(pr >>> 16);
+                pr = 34'(wval) * 34'($signed({1'b0, rbg}));
+                add = (pr < 0) ? (16'd0 - 16'((34'sd0 - pr) >>> 16)) : 16'(pr >>> 16);
                 rw_d <= rw_q + add; rw_we <= 1'b1;
                 ps <= P_NEXT;
             end

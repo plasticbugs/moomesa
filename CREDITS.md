@@ -57,3 +57,22 @@ authors in the core's README: fx68k is Jorge Cwik's, tv80 Guy Hutchison's, the
 jt-series sound chips Jose Tejada's, and they are the reason a core can exist
 at all. Never strip a licence header from a file you copy — the SPDX headers
 in `platform/` and `modules/` are the licence, not decoration.
+
+## This core: Wild West C.O.W.-Boys of Moo Mesa
+
+* **MAME's `moo.cpp`** — R. Belmont and Acho A. Tang, after Olivier
+  Galibert's `xexex.cpp`; Moo Mesa's protection worked out by ElSemi and
+  Olivier Galibert.  The Konami video devices it uses — `k054156_k054157_k056832`
+  and `k053246_k053247_k055673` (David Haywood), `k053251` (Fabio Priuli,
+  Acho A. Tang, R. Belmont), `k054338` (David Haywood) — `k054539` and
+  `k054321` (Olivier Galibert), `k053252` (Angelo Salese).  The RTL video
+  chips and the K054539 here are written from these files and checked
+  against them.
+* **Jorge Cwik** — fx68k, the 68000.
+* **Guy Hutchison** — tv80, the Z80.
+* **Jose Tejada (jotego)** — jt51 (the YM2151) and jt5911 (the ER5911
+  EEPROM); and his `jtcores` Moo Mesa work and board schematics
+  (`cores/moo/sch/moomesa`), read as a second source for the interrupt wiring
+  and the address decode.
+* **furrtek** — the silicon reverse-engineering of the K054539
+  (`SiliconRE/Konami/054539`), the reference behind the chip's behaviour.

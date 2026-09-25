@@ -29,13 +29,19 @@ someone decodes squares off a screen.
 goes in `Assets/moomesa/common/moomesa.rom`. Verify the bitstream's md5 on the
 card.
 
-## The skeleton, before there is a game
+## A healthy boot
 
-A white crosshatch every 16 pixels with red, green and blue bars across the
-middle, dark above bright. A cyan square moves with the d-pad, turns yellow on
-button 1 (A or Y) and magenta on button 2 (B or X); button 1 also beeps. Every
-grid cell the same size and every line unbroken means the raster, the video
-hand-over, the scaler settings, the controls and the audio path all work.
+About six seconds of black (the game's own RAM tests), then a white
+"VERSION EA / RAM ROM CHECK" page listing RAM and ROM checks, every one "OK",
+with these checksums -- they are the same in MAME and in the RTL bench, so any
+other number names a ROM region that arrived wrong:
+
+    ROM F5 OK 151B     ROM W2 OK 0027
+    ROM 05 OK 70F2     ROM 06 OK 8A86
+    ROM T5 OK C5AD     ROM T6 OK 5689
+
+Then the attract mode: the Konami logo, the story, the title, demo play.
+Select inserts a coin, start starts; A or Y shoots, B or X jumps.
 
 ## The panel
 
@@ -55,9 +61,16 @@ top). Green is 1. Read each row from the end where row 0 shows `1010 1010`.
 | 0 | 22 | core in reset | 0 |
 | 0 | 23 | CPU halted | 0 |
 | 0 | 24 | watchdog has fired | 0 (expected 1 after the menu has been open a while) |
-| 0 | 25–32 | system inputs, active low | `1111 1111` with nothing pressed |
+| 0 | 25 | IRQ5 (object-DMA end) has been taken | 1 once the game runs |
+| 0 | 26 | IRQ4 (vblank) has been taken | 1 once the game runs |
+| 0 | 27 | (unused) | 0 |
+| 0 | 28 | the K054539 missed a sample | 0 |
+| 0 | 29 | (unused) | 0 |
+| 0 | 30 | the game programmed a video mode the core does not model | 0 |
+| 0 | 31 | a tilemap line was not finished in time | 0 |
+| 0 | 32 | a sprite line was not finished in time | 0 |
 | 1 | 1–8, 9–32 | first fault: vector, then the code address before it | all 0 |
-| 2 | 1–16, 17–24, 25–32 | first program ROM word, first sound ROM byte, first graphics byte | *fill in from the image* |
+| 2 | 1–16, 17–24, 25–32 | first program ROM word, first sound ROM byte, first graphics byte | `0000 0000 0001 1000` (0018), `1110 1101` (ED), then any |
 | 3 | 1–16, 17–32 | SRAM self-test | `1010 0101 0101 1010`, `0101 1010 1010 0101` |
 
 Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
@@ -67,7 +80,7 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 | symptom | look at |
 |---|---|
 | black, counter running, row 2 right, watchdog 1 | the image in SDRAM — rerun `sim/run_mem.sh`; section 5.16 |
-| row 3 not the pattern | **Bring-up: SRAM** switches; then the SRAM port |
+| row 3 not the pattern | the SRAM port (the game keeps nothing there; only its self-test) |
 | row 2 wrong | **Bring-up: SDRAM** switches; then the PLL phase (SDC, section 5.20) |
 | garbled picture | ask for the service-mode test pattern first; section 5.18 |
 | glitches only while playing, gone in the menu | something the CPU shares with the video; section 5.17 |

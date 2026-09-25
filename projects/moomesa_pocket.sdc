@@ -1,6 +1,6 @@
 # ==============================================================================
 # Cowboys of Moo Mesa on the Pocket: timing constraints beyond the BSP's
-# sys_constr.sdc. The 96 MHz system clock, its 6.857 MHz video pair and the
+# sys_constr.sdc. The 96 MHz system clock, its 8 MHz video pair and the
 # shifted SDRAM clock all come from core_pll and are timed as one related
 # group; the two 74.25 MHz inputs and the audio PLL are asynchronous to it.
 # The PLL's fifth output drives nothing in core_top, so no clock of its own
@@ -46,7 +46,7 @@ set_multicycle_path -setup 2 -from [get_clocks {dram_clk}] -to [get_registers {*
 set_multicycle_path -setup 3 -from [get_registers {*|sdram_ctrl:*|last[*]}] -to [get_registers {*|sdram_ctrl:*|*}]
 set_multicycle_path -hold  2 -from [get_registers {*|sdram_ctrl:*|last[*]}] -to [get_registers {*|sdram_ctrl:*|*}]
 
-# The pixel hand-over to the 6.857 MHz video clock. The dot enable's phase is
+# The pixel hand-over to the 8 MHz video clock. The dot enable's phase is
 # pinned to clk_vid (core_top.sv's pix_sync into clk_enables.sv), so the
 # colour and sync registers are launched a fixed number of system clocks
 # before the clk_vid edge that samples them, and the setup check starts from
@@ -67,9 +67,19 @@ set_false_path -to   [get_ports {cram0_* cram1_*}]
 set_false_path -from [get_ports {cram0_dq[*] cram1_dq[*] cram0_wait cram1_wait}]
 
 # ------------------------------------------------------------------------------
-# Multicycle exceptions for clock-enabled blocks go here.  None are claimed
-# yet, because the skeleton has nothing that needs one.  Before adding any,
-# read METHODOLOGY.md sections 5.11 and 5.20:
+# The 68000.  fx68k changes state only on enPhi1 or enPhi2, which
+# rtl/clk_enables.sv raises three system clocks apart (a 16 MHz CPU in a
+# 96 MHz domain: div % 6 == 0 and == 3), so every path that both starts and
+# ends inside fx68k has three clocks.  The filter is fx68k's own registers
+# only; its bus inputs (iEdb, DTACKn, VPAn, IPL) come from moomesa_core's
+# registers and are single-cycle paths into it, checked as they stand.
+set M68K [get_keepers {*|fx68k:u_68k|*}]
+set_multicycle_path -setup 3 -from $M68K -to $M68K
+set_multicycle_path -hold  2 -from $M68K -to $M68K
+
+# ------------------------------------------------------------------------------
+# Multicycle exceptions for other clock-enabled blocks go here.  Before adding
+# any, read METHODOLOGY.md sections 5.11 and 5.20:
 #
 #   * write down why EVERYTHING the filter matches qualifies, and register
 #     every input at the edge of the relaxed region;

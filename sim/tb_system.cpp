@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-static const int W = 320, H = 224;
+static const int W = 384, H = 224;
 static const uint32_t IMG = 0xD40080;      // must match moomesa.mra and moomesa_mem.sv
 
 static Vtb_system_top *dut;
@@ -29,7 +29,7 @@ static void write_png(const std::string &path, const std::vector<uint8_t> &rgb);
 
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
-    int frames = 10, gap = 8, hold = 4;
+    int frames = 10, gap = 8, hold = 4, coin = 600, start = 700, play = 1000;
     std::string rom, out = ".";
     std::set<int> snaps;
     for (int i = 1; i < argc; i++) {
@@ -38,6 +38,9 @@ int main(int argc, char **argv) {
         if (a == "-frames") frames = atoi(next().c_str());
         else if (a == "-gap") gap = atoi(next().c_str());
         else if (a == "-o") out = next();
+        else if (a == "-coin") coin = atoi(next().c_str());
+        else if (a == "-start") start = atoi(next().c_str());
+        else if (a == "-play") play = atoi(next().c_str());
         else if (a == "-snap") {
             std::string s = next();
             for (size_t p = 0; p < s.size();) {
@@ -63,8 +66,9 @@ int main(int argc, char **argv) {
 
     dut = new Vtb_system_top;
     dut->reset = 1; dut->pause = 0; dut->dl_we = 0;
-    dut->dswa = dut->dswb = 0xff;
-    dut->in0 = dut->in1 = dut->in2 = 0xff;         // active low: nothing pressed
+    dut->p1 = dut->p2 = dut->p3 = dut->p4 = 0xff;  // active low: nothing pressed
+    dut->in0 = 0xff; dut->test_n = 1;
+    dut->dsw = 0xA;                                // factory: stereo, common coin, four players
     for (int i = 0; i < 16; i++) tick();
     long t = 0; while (!dut->mem_ready && t++ < 200000) tick();
     if (!dut->mem_ready) { printf("FAIL  the memory never came ready\n"); return 1; }
@@ -81,9 +85,21 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> frame(W * H * 3, 0);
     int px = 0, frame_no = 0, watchdogs = 0;
     bool in_vblank = true, cap = false;
+    int status = 0;
     while (frame_no <= frames) {
+        // the inputs tools/dump_state.lua gives MAME
+        uint8_t p1 = 0xff, in0 = 0xff;
+        if (coin > 0 && frame_no >= coin && frame_no < coin + 8) in0 &= ~0x01;
+        if (start > 0 && frame_no >= start && frame_no < start + 8) p1 &= ~0x80;
+        if (start > 0 && frame_no > play) {
+            if ((frame_no / 150) % 3 != 2) p1 &= ~0x02; else p1 &= ~0x01;
+            if ((frame_no / 9) % 2 == 0) p1 &= ~0x10;
+            if ((frame_no / 61) % 7 == 0) p1 &= ~0x20;
+        }
+        dut->p1 = p1; dut->in0 = in0;
         bool want = dut->pix_ce && dut->de;
         tick();
+        status |= dut->dbg_status;
         if (dut->watchdog_reset) watchdogs++;
         if (cap && px < W * H) {
             frame[3 * px + 0] = (dut->rgb >> 16) & 0xff;
@@ -98,12 +114,14 @@ int main(int argc, char **argv) {
                 write_png(p, frame);
                 printf("frame %d: %d pixels\n", frame_no, px);
             }
+            if (frame_no % 60 == 0)
+                fprintf(stderr, "frame %d  status %02x  68000 cache misses %u\n", frame_no, status, dut->mrom_misses);
             frame_no++; px = 0;
             std::fill(frame.begin(), frame.end(), 0);
         }
         in_vblank = dut->vblank;
     }
-    printf("%d frames, watchdog resets %d, halted %d\n", frames, watchdogs, (int)dut->dbg_halted);
+    printf("%d frames, watchdog resets %d, halted %d, status %02x\n", frames, watchdogs, (int)dut->dbg_halted, status);
     delete dut;
     return 0;
 }

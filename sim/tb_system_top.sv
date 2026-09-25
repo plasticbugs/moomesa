@@ -25,13 +25,16 @@ module tb_system_top (
     input  logic [24:0] dl_addr,
     input  logic  [7:0] dl_data,
 
-    input  logic  [7:0] dswa, dswb,
-    input  logic  [7:0] in0, in1, in2,
+    input  logic  [7:0] p1, p2, p3, p4, in0,
+    input  logic        test_n,
+    input  logic  [3:0] dsw,
 
     output logic [23:0] rgb,
-    output logic        de, pix_ce, vblank, hsync, vsync,
-    output logic signed [15:0] snd,
+    output logic        de, pix_ce, vblank, hblank, hsync, vsync,
+    output logic signed [15:0] snd_l, snd_r,
     output logic        dbg_halted, watchdog_reset,
+    output logic  [7:0] dbg_status,
+    output logic [15:0] mrom_misses,
     output logic        mem_ready
 );
     logic        mrom_req, mrom_ack;  logic [19:1] mrom_addr;  logic [15:0] mrom_q;
@@ -39,7 +42,7 @@ module tb_system_top (
     logic        pcm_req,  pcm_ack;   logic [20:0] pcm_addr;   logic  [7:0] pcm_q;
     logic        tile_req, tile_ack;  logic [18:0] tile_addr;  logic [31:0] tile_q;
     logic        spr_req,  spr_ack;   logic [19:0] spr_addr;   logic [63:0] spr_q;
-    logic        vram_ack;  logic [15:0] vram_q, mrom_misses;
+    logic        vram_ack;  logic [15:0] vram_q;
 
     wire [15:0] dram_dq;  wire [12:0] dram_a;  wire [1:0] dram_ba;
     wire        dram_dqml, dram_dqmh, dram_clk, dram_cke;
@@ -95,11 +98,14 @@ module tb_system_top (
         .pcm_req(pcm_req), .pcm_addr(pcm_addr), .pcm_ack(pcm_ack), .pcm_q(pcm_q),
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
-        .dswa(dswa), .dswb(dswb), .in0(in0), .in1(in1), .in2(in2),
-        .rgb(rgb), .hsync(hsync), .vsync(vsync), .hblank(), .vblank(vblank),
-        .pix_ce(pix_ce), .de(de), .snd(snd),
+        .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data),
+        .nv_addr(7'd0), .nv_we(1'b0), .nv_din(8'd0), .nv_dout(), .nv_changed(),
+        .p1(p1), .p2(p2), .p3(p3), .p4(p4), .in0(in0), .test_n(test_n), .dsw(dsw),
+        .rgb(rgb), .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank),
+        .pix_ce(pix_ce), .de(de), .snd_l(snd_l), .snd_r(snd_r),
         .dbg_halted(dbg_halted), .dbg_addr(f_addr), .dbg_bus(f_bus), .dbg_wait(),
-        .watchdog_reset(watchdog_reset)
+        .watchdog_reset(watchdog_reset),
+        .dbg_status(dbg_status), .dbg_snd_worst(), .dbg_snd_reads()
     );
 
     // The hardware's own first-fault capture, run here so it is proven quiet
