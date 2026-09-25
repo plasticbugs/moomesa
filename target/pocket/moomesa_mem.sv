@@ -167,14 +167,15 @@ module moomesa_mem (
     // ------------------------------------------------------ 68000 cache
     // Direct-mapped, 512 lines of 4 words (4 KB), filled by a 4-word burst.
     // The ROM is read-only, so a line can never go stale; every line is
-    // invalidated while the image downloads.  A hit answers in 3 clocks, a
+    // invalidated after the image downloads (a 512-clock sweep of the tags,
+    // long before the 68000 leaves reset).  A hit answers in 3 clocks, a
     // miss when its line is in.
     //   mrom_addr[19:1]: word [2:1], line index [11:3], tag [19:12]
     logic [15:0] cdata [2048];
-    logic  [7:0] ctag  [512];
-    logic [511:0] cvalid;
+    logic  [8:0] ctag  [512];           // {valid, tag}
     logic [15:0] cdata_q;
-    logic  [7:0] ctag_q;
+    logic  [8:0] ctag_q;
+    logic  [9:0] csweep;                // clears every tag while the image downloads
     logic [19:1] m_a;
     logic        m_served, m_fill_start, m_filling, m_have;
     logic [15:0] m_word;
@@ -192,7 +193,8 @@ module moomesa_mem (
         cdata_q <= cdata[{m_a[11:3], m_a[2:1]}];
         ctag_q  <= ctag[m_a[11:3]];
         if (bown == B_CACHE && b_wr) cdata[{m_a[11:3], b_idx[1:0]}] <= b_data;
-        if (mc == MC_DONE && m_filling) ctag[m_a[11:3]] <= m_a[19:12];
+        if (csweep != 10'd512) ctag[csweep[8:0]] <= 9'd0;
+        else if (mc == MC_DONE && m_filling) ctag[m_a[11:3]] <= {1'b1, m_a[19:12]};
     end
 
     always_ff @(posedge clk) begin
@@ -202,7 +204,7 @@ module moomesa_mem (
             MC_IDLE: if (mrom_req && !m_served) begin m_a <= mrom_addr; mc <= MC_LOOK; end
             MC_LOOK: mc <= MC_CMP;                         // BRAM read in flight
             MC_CMP: begin
-                if (cvalid[m_a[11:3]] && ctag_q == m_a[19:12]) begin
+                if (ctag_q == {1'b1, m_a[19:12]}) begin
                     mrom_q <= cdata_q; mrom_ack <= 1'b1; m_served <= 1'b1;
                     m_filling <= 1'b0;
                     mc <= MC_IDLE;
@@ -218,17 +220,15 @@ module moomesa_mem (
                 if (bown == B_CACHE && b_done) mc <= MC_DONE;
             end
             MC_DONE: begin
-                cvalid[m_a[11:3]] <= 1'b1;
                 mrom_q <= m_word; mrom_ack <= 1'b1; m_served <= 1'b1;
                 m_filling <= 1'b0;
                 mc <= MC_IDLE;
             end
             default: mc <= MC_IDLE;
         endcase
-        if (init || dl_active) begin
-            cvalid <= '0;
-            if (init) begin mc <= MC_IDLE; m_served <= 1'b0; m_fill_start <= 1'b0; m_filling <= 1'b0; end
-        end
+        if (init || dl_active) csweep <= 10'd0;
+        else if (csweep != 10'd512) csweep <= csweep + 10'd1;
+        if (init) begin mc <= MC_IDLE; m_served <= 1'b0; m_fill_start <= 1'b0; m_filling <= 1'b0; end
         if (init && !dl_active) mrom_misses <= '0;
     end
     wire _unused_have = m_have;

@@ -4,9 +4,9 @@
 // names the section it implements.
 //
 //   main    fx68k at 16 MHz; ROM through the memory module's cache; work RAM;
-//           CONTROL2, the EEPROM, the K053252's interrupt, the K053990
-//           protection, the K054321 latches; IRQ4 at vblank and IRQ5 at the
-//           end of object DMA (hardware.md 4: the ROM's order, not MAME's)
+//           CONTROL2, the EEPROM, the K053990 protection, the K054321
+//           latches; IRQ5 at vblank and IRQ4 100 us later on DMA frames, as
+//           MAME raises them (hardware.md 4 says why that order matters)
 //   video   rtl/moo_video.sv
 //   sound   Z80 at 8 MHz with its ROM bank and RAM, jt51 (YM2151), and
 //           rtl/k054539.sv; mixed in stereo with MAME's routing gains and the
@@ -153,7 +153,7 @@ module moomesa_core (
     // video
     logic        v_req, v_ack;
     logic [15:0] v_q;
-    logic        vblank_irq, dma_done;
+    logic        vblank_irq, dma_done, dma_start;
 
     typedef enum logic [2:0] { S_IDLE, S_WAIT, S_RAM1, S_RAM2, S_ROM, S_VID } sst_t;
     sst_t ss;
@@ -269,17 +269,27 @@ module moomesa_core (
         if (rst) begin in_cyc <= 1'b0; dtack <= 1'b0; vpa <= 1'b0; end
     end
 
-    // interrupts: IRQ4 at the first line of vblank (CONTROL2 bit 11), IRQ5 at
-    // the end of object DMA (bit 5); each held until acknowledged
+    // interrupts, as MAME's moo_interrupt raises them (docs/hardware.md 4):
+    // IRQ5 at the first line of vblank while CONTROL2 bit 5 is set; IRQ4
+    // 100 us later, on frames whose vblank started an object DMA, if bit 11
+    // is set then.  Each is held until acknowledged.  The order and the gap
+    // matter: the main program's vblank wait (68000 at 0x20C8) must see the
+    // flag IRQ5 clears before IRQ4's handler sets it again.
+    localparam int IRQ4_DELAY = 9600;       // 100 us at 96 MHz
+    logic [13:0] i4_timer;
     wire [2:0] iack_level = eab[3:1];
     always_ff @(posedge clk) begin
-        if (vblank_irq && ctl2[11]) irq4 <= 1'b1;
-        if (dma_done && ctl2[5])    irq5 <= 1'b1;
+        if (vblank_irq && ctl2[5]) irq5 <= 1'b1;
+        if (dma_start) i4_timer <= 14'(IRQ4_DELAY);
+        else if (i4_timer != 14'd0 && !pause) begin
+            i4_timer <= i4_timer - 14'd1;
+            if (i4_timer == 14'd1 && ctl2[11]) irq4 <= 1'b1;
+        end
         if (as && !as_d && FC2 && FC1 && FC0) begin
             if (iack_level == 3'd4) irq4 <= 1'b0;
             if (iack_level == 3'd5) irq5 <= 1'b0;
         end
-        if (rst) begin irq4 <= 1'b0; irq5 <= 1'b0; end
+        if (rst) begin irq4 <= 1'b0; irq5 <= 1'b0; i4_timer <= 14'd0; end
     end
     assign IPLn = irq5 ? ~3'd5 : irq4 ? ~3'd4 : 3'b111;
 
@@ -338,7 +348,7 @@ module moomesa_core (
     assign s_d    = p_busy ? p_d    : cpu_do;
 
     // ------------------------------------------------ EEPROM
-    logic [7:0] eep [128];
+    (* ramstyle = "no_rw_check" *) logic [7:0] eep [128];
     logic [6:0] e_addr;
     logic [7:0] e_din, e_q;
     logic       e_we;
@@ -374,7 +384,7 @@ module moomesa_core (
         .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data),
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
-        .vblank_irq(vblank_irq), .dma_done(dma_done), .hpos(), .vpos(),
+        .vblank_irq(vblank_irq), .dma_done(dma_done), .dma_start(dma_start), .hpos(), .vpos(),
         .rgb(rgb), .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank), .de(de),
         .dbg_list_we(1'b0), .dbg_list_addr(11'd0), .dbg_list_d(16'd0), .dbg_sort(1'b0),
         .dbg_index(), .dbg_alpha(), .dbg_shadow(),
@@ -437,13 +447,34 @@ module moomesa_core (
         if (rst) latch2 <= 8'd0;
     end
 
-    // YM2151
+    // YM2151.  jt51 changes state only on its 2 MHz enable, except its
+    // register file, which takes a write on whatever clock it arrives.  So a
+    // Z80 write is latched here and handed to jt51 as a one-clock strobe on
+    // the clock after a 2 MHz enable: then every jt51 register changes just
+    // after that enable, and the SDC's multicycle into jt51's pipeline is
+    // true of every path it covers (projects/moomesa_pocket.sdc).
     logic [7:0] ym_do;
     logic signed [15:0] ym_l, ym_r;
+    logic       ym_wpend, ym_wstb, ym_wseen, ym2_d;
+    logic       ym_wa0;
+    logic [7:0] ym_wd;
+    always_ff @(posedge clk) begin
+        ym2_d   <= cen_ym2;
+        ym_wstb <= 1'b0;
+        if (!(zwr && zs_ym)) ym_wseen <= 1'b0;
+        if (zwr && zs_ym && !ym_wseen) begin
+            ym_wseen <= 1'b1; ym_wpend <= 1'b1; ym_wa0 <= zA[0]; ym_wd <= z_do;
+        end else if (ym_wpend && ym2_d) begin
+            ym_wpend <= 1'b0; ym_wstb <= 1'b1;
+        end
+        if (rst) begin ym_wpend <= 1'b0; ym_wseen <= 1'b0; end
+    end
+    wire ym_rd = zrd && zs_ym;
     /* verilator lint_off PINCONNECTEMPTY */
     jt51 u_ym (
         .rst(rst), .clk(clk), .cen(cen_ym), .cen_p1(cen_ym2),
-        .cs_n(!(zmem && zs_ym)), .wr_n(z_wr_n), .a0(zA[0]), .din(z_do), .dout(ym_do),
+        .cs_n(!(ym_wstb || ym_rd)), .wr_n(!ym_wstb), .a0(ym_wstb ? ym_wa0 : zA[0]),
+        .din(ym_wd), .dout(ym_do),
         .ct1(), .ct2(), .irq_n(), .sample(), .left(ym_l), .right(ym_r), .xleft(), .xright()
     );
     /* verilator lint_on PINCONNECTEMPTY */
@@ -497,12 +528,25 @@ module moomesa_core (
     function automatic signed [15:0] clip16(input signed [31:0] v);
         clip16 = (v > 32'sd32767) ? 16'sd32767 : (v < -32'sd32768) ? -16'sd32768 : 16'(v);
     endfunction
-    logic signed [31:0] mix_l, mix_r;
+    // pipelined: the sources change at the sample rate, so latency is free
+    logic signed [15:0] m_yl, m_yr;
+    logic signed [17:0] m_kl, m_kr;
+    logic signed [31:0] p_yl, p_yr, p_kl, p_kr, mix_l, mix_r, g_l, g_r;
+    logic        [15:0] m_gain;
+    logic        [1:0]  m_act;
     always_ff @(posedge clk) begin
-        mix_l <= (32'(ym_l) * 32'sd1229 + 32'(k_r) * 32'sd2048) >>> 12;     // 0.30, 0.50 in Q12
-        mix_r <= (32'(ym_r) * 32'sd1229 + 32'(k_l) * 32'sd2048) >>> 12;
-        snd_l <= k321_active[1] ? clip16((mix_l * 32'(k321_gain(k321_vol))) >>> 12) : 16'sd0;
-        snd_r <= k321_active[0] ? clip16((mix_r * 32'(k321_gain(k321_vol))) >>> 12) : 16'sd0;
+        m_yl <= ym_l; m_yr <= ym_r; m_kl <= k_l; m_kr <= k_r;
+        m_gain <= k321_gain(k321_vol); m_act <= k321_active[1:0];
+        p_yl <= 32'(m_yl) * 32'sd1229;            // 0.30 in Q12
+        p_yr <= 32'(m_yr) * 32'sd1229;
+        p_kl <= 32'(m_kl) <<< 11;                 // 0.50 in Q12
+        p_kr <= 32'(m_kr) <<< 11;
+        mix_l <= (p_yl + p_kr) >>> 12;
+        mix_r <= (p_yr + p_kl) >>> 12;
+        g_l <= (mix_l * 32'($signed({1'b0, m_gain}))) >>> 12;
+        g_r <= (mix_r * 32'($signed({1'b0, m_gain}))) >>> 12;
+        snd_l <= m_act[1] ? clip16(g_l) : 16'sd0;
+        snd_r <= m_act[0] ? clip16(g_r) : 16'sd0;
     end
 
     // ------------------------------------------------ bring-up status

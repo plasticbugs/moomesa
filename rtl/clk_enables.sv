@@ -55,15 +55,29 @@ module clk_enables (
     // stopped.  The dot divider is separate and keeps running, which is what
     // leaves the picture on the screen behind the Pocket's menu (METHODOLOGY
     // 5.5: the menu-open signal is not a reset).
+    //
+    // Every enable is a register, decoded from the divider one clock ahead:
+    // they fan out to every register of the CPUs, and a decode of a 6-bit
+    // counter in front of that fan-out was the machine's slowest path.  A
+    // pulse registered just before a pause still fires; the frozen divider
+    // then makes no more, so the count-to-pulse rule above holds.
     wire run = !pause;
-    wire [2:0] d6 = 3'(div % 6);
-    assign cen_phi1 = run && (d6 == 3'd0);                  // 96 / 6 = 16 MHz
-    assign cen_phi2 = run && (d6 == 3'd3);
-    assign cen_z80  = run && (div % 12 == 1);               // 8 MHz
-    assign cen_ym   = run && (div % 24 == 5);               // 4 MHz
-    assign cen_ym2  = run && (div == 6'd5);                 // 2 MHz
-    assign cen_snd  = run && (dsnd == 11'd0);               // 48 kHz
-    assign cen_pix  = (dpix == 4'd0);
+    wire [2:0] d6  = 3'(div % 6);
+    wire [3:0] d12 = 4'(div % 12);
+    wire [4:0] d24 = 5'(div % 24);
+    always_ff @(posedge clk) begin
+        cen_phi1 <= run && (d6 == 3'd5);                    // 96 / 6 = 16 MHz
+        cen_phi2 <= run && (d6 == 3'd2);
+        cen_z80  <= run && (d12 == 4'd0);                   // 8 MHz
+        cen_ym   <= run && (d24 == 5'd4);                   // 4 MHz
+        cen_ym2  <= run && (div == 6'd4);                   // 2 MHz
+        cen_snd  <= run && (dsnd == 11'd1999);              // 48 kHz
+        cen_pix  <= pix_sync || (dpix == 4'd11);            // 8 MHz, on the clock dpix is 0
+        if (rst) begin
+            cen_phi1 <= 1'b0; cen_phi2 <= 1'b0; cen_z80 <= 1'b0;
+            cen_ym <= 1'b0; cen_ym2 <= 1'b0; cen_snd <= 1'b0; cen_pix <= 1'b0;
+        end
+    end
 endmodule
 
 `default_nettype wire

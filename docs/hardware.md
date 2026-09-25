@@ -144,27 +144,36 @@ in the game's service menu.
 Only autovectored levels 4 and 5 are used; every other vector points at an
 `rte`-style stub at 0x1000.
 
-| level | vector | source | ack |
+| level | vector | handler does | raised (MAME, and the core) |
 |---|---|---|---|
-| 4 | 0x24B0 | frame interrupt at the start of vertical blank | handler writes K053252 reg 0x0E (INT1ACK, `$D001D`) and K056832 reg 0x06 bit 0 (`$C0007`, `$D8007`) |
-| 5 | 0x2482 | end of object DMA | handler clears K053246 reg 5 bit 4 (DMA enable) and CONTROL2 bit 5 (its own enable) |
+| 5 | 0x2482 | clears K053246 reg 5 bit 4 (DMA enable), CONTROL2 bit 5 (its own enable), and the flag `$18004A` | at the first line of vblank, while CONTROL2 bit 5 is set |
+| 4 | 0x24B0 | acks the K053252 (reg 0x0E, `$D001D`) and K056832 reg 06; spins until `$18004A` is 0; sets it to 1; the frame's work; re-enables DMA and IRQ5 | 100 us after vblank, on frames whose vblank ran an object DMA, if CONTROL2 bit 11 is set then |
 
-The IRQ4 handler (0x24B0) does the frame's work and then spins on a flag
-(`$18004A`) that only the IRQ5 handler clears, before loading the K053246
-offsets and re-enabling DMA. So on the board the order is: vblank → IRQ4
-→ (DMA runs) → IRQ5.
+Both are held until acknowledged (MAME's `HOLD_LINE`).
 
-**MAME disagrees on order and source.** `moo_interrupt` runs at vblank: if the
-K053246 DMA bit is set it copies the sprites instantly and asserts IRQ5 at
-once (if CONTROL2 bit 5), then asserts IRQ4 100 µs later (if CONTROL2 bit 11).
-The game tolerates both orders. **The core follows the ROM and the schematic**:
-IRQ4 from the CCU's INT1 at vblank (gated by CONTROL2 bit 11, as MAME gates
-it), and IRQ5 at the end of a real DMA pass (gated by CONTROL2 bit 5). Both
-are held until acknowledged (MAME's `HOLD_LINE` is an ack-on-vector
-approximation; the handlers ack explicitly).
+**The order is not a detail.** Outside any interrupt, the main program waits
+for a vblank at 0x20C8 and 0x210E: it sets `$18004A`, turns IRQ5 on (writes
+0x20 to CONTROL2, without enabling DMA) and spins until the flag reads 0.
+Only IRQ5 clears it, and IRQ4's handler sets it back to 1 as soon as it has
+passed its own wait -- so the main program sees the 0 only in the window
+between IRQ5 and IRQ4.
 
-**This means a cycle-by-cycle CPU trace against MAME diverges at the first
-vblank.** Comparisons against MAME must be at the level of frame contents.
+*Corrected, 2026-09-25.* An earlier version of this section read the IRQ4
+handler's wait as "IRQ5 must come after IRQ4" and had the core raise IRQ4 at
+vblank and IRQ5 at the end of the DMA, calling that the ROM's order and
+MAME's the reverse.  The whole-machine bench then ran into the game's first
+screen change after a coin and stayed black: the 68000 spent every frame in
+IRQ4's handler, the main program's vblank wait never saw the flag at 0, and
+the title's palette was never loaded (fetch histogram: all but a few
+thousand fetches per frame at 0x2550-0x256F; the model drew the RTL's state
+as black too, palette all zero).  MAME's model -- IRQ5 first, IRQ4 100 us
+later -- is what the program needs, and is what the core now does.  The
+CCU's INT1 line and the board's true DMA duration are still unmeasured; the
+100 us is MAME's.
+
+**A cycle-by-cycle CPU trace against MAME still diverges** (the DMA takes
+real time here; MAME copies instantly), so comparisons against MAME are at
+the level of frame contents.
 
 ## 5. Main CPU to sound CPU (K054321)
 

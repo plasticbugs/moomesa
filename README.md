@@ -47,9 +47,10 @@ Not proven:
   modelled — flagged on the panel if the game asks for it);
 - the EEPROM save round trip.
 
-Known differences from MAME, on purpose: the frame and DMA interrupts come in
-the order the ROM expects (IRQ4 at vblank, IRQ5 at the end of object DMA);
-MAME raises them the other way round.  Details in `docs/hardware.md` section 4.
+Known differences from MAME: the object DMA takes real time (about 30 us)
+where MAME's is instant.  The interrupts follow MAME's order, which the game
+depends on -- see `docs/hardware.md` section 4 for the black screen an earlier
+order produced.
 
 ## Building the ROM image
 

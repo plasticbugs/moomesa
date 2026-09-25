@@ -52,6 +52,7 @@ module moo_video (
     // timing and interrupts
     output logic        vblank_irq,     // pulse at the first line of vblank
     output logic        dma_done,       // pulse at the end of an object DMA
+    output logic        dma_start,      // pulse: this vblank starts an object DMA
     output logic  [8:0] hpos,
     output logic  [8:0] vpos,
 
@@ -99,6 +100,7 @@ module moo_video (
     wire [8:0] nline = (vpos == 9'd263) ? 9'd0 : vpos + 9'd1;
     wire render = line_start && (nline >= 9'd16) && (nline <= 9'd239);
     assign vblank_irq = line_start && (vpos == 9'd240);
+    assign dma_start  = vblank_irq && k246[5][4];
 
     // ------------------------------------------------------------ registers
     logic [15:0] vac [32];
@@ -127,7 +129,7 @@ module moo_video (
     wire        cv_half  = a[1];                     // 0: attribute word, 1: code word
 
     // ------------------------------------------------------------ tile RAM
-    logic [3:0][7:0] vram [8192];
+    (* ramstyle = "no_rw_check" *) logic [3:0][7:0] vram [8192];
     logic [31:0] vq_cpu, vq_eng;
     logic [12:0] ve_addr;
     logic        v_we;
@@ -145,7 +147,7 @@ module moo_video (
     always_ff @(posedge clk) vq_eng <= vram[ve_addr];
 
     // ------------------------------------------------------------ sprite RAM
-    logic [1:0][7:0] sram [32768];
+    (* ramstyle = "no_rw_check" *) logic [1:0][7:0] sram [32768];
     logic [15:0] sq_cpu, sq_dma;
     logic [14:0] sd_addr;
     logic        s_we;

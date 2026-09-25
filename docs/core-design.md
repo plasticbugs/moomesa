@@ -114,7 +114,8 @@ between equal z-codes is part of what the pictures depend on.
 
 ## 7. What is not cycle-exact, and why that is acceptable
 
-- IRQ order follows the ROM (IRQ4 at vblank, IRQ5 at DMA end), not MAME.
+- Interrupts follow MAME (IRQ5 at vblank, IRQ4 100 us later on DMA frames);
+  the object DMA takes real time (about 30 us) where MAME's is instant.
 - The frame is rendered a line at a time; MAME renders it all at vblank end.
   A register the CPU changes during the visible frame takes effect on the next
   line here and on the next frame in MAME. The game writes its video

@@ -20,10 +20,15 @@
 //         unclaimed, unshadowed pixel.  Whether each shows is the mixer's
 //         decision (it knows the layers under it).
 //
-// Claim and shadow flags are flops, so a pixel is written every clock and a
-// half is cleared in one.  The sprite data behind them is block RAM:
-//   claim  {palette index[10:0], class[1:0]}   class: which sorted layers hide it
-//   shadow {preset[1:0], class[1:0]}
+// The line buffer is two block RAMs.  Flags {claimed, shadowed, shadow preset,
+// shadow class}: the engine reads a pixel's a clock before it writes it
+// (forwarding the write before when it is the same pixel), so a pixel still
+// goes in every clock.  Data {claimed, palette index[10:0], class[1:0],
+// shadowed, preset[1:0], class[1:0]}: written whole by the engine from the
+// flags, read by the mixer.  (Flags as flops -- four 512-bit arrays behind
+// 512-way decodes -- came to 9,100 ALMs, half the device: METHODOLOGY 5.18.)
+// The engine clears its half at the start of each line, 384 clocks.
+//   class: which sorted layers hide it (0: none .. 3: all three)
 //
 // Deviation from MAME, on a path the game was never seen to use (no shadow in
 // 20 minutes of census): MAME skips a shadow pen whose priority mask fails and
@@ -72,7 +77,7 @@ module moo_sprites (
     output logic        mx_claim,
     output logic [12:0] mx_cdata,
     output logic        mx_shadow,
-    output logic  [3:0] mx_sdata,
+    output logic  [3:0] mx_sdata,       // (all four one clock after mx_x)
 
     // bench back door into the list (word address {entry, word})
     input  logic        dbg_we,
@@ -243,7 +248,7 @@ module moo_sprites (
     // ------------------------------------------------------------ line engine
     typedef enum logic [4:0] {
         E_IDLE, E_NEXT, E_S1, E_S2, E_L1, E_L2, E_Z1, E_G1, E_G2, E_V,
-        E_R0, E_R1, E_R2, E_R3, E_C0, E_C1, E_C2, E_PIX, E_NX
+        E_VC, E_R0, E_R1, E_R2, E_R3, E_C0, E_CA, E_C1, E_C2, E_PIX, E_NX, E_CLR
     } est_t;
     est_t es;
     logic  [8:0] Y;
@@ -263,7 +268,7 @@ module moo_sprites (
     logic  [5:0] ty;
     logic        fy, dbl, pass;
     logic  [3:0] row_a, row_b;
-    logic signed [16:0] sx;
+    logic signed [16:0] sx, c_s0, c_s1, v_t0, v_t1;
     logic [11:0] zw;
     logic        fx;
     logic  [5:0] tx;
@@ -277,14 +282,26 @@ module moo_sprites (
     logic  [1:0] preset;
     logic [15:0] cyc;
 
-    logic [511:0] claim0, claim1, shd0, shd1;
-    logic [12:0] cbuf [1024];
-    logic  [3:0] sbuf [1024];
-    logic        c_we, sh_we;
-    logic  [9:0] c_wa;
-    logic [12:0] c_wd;
-    logic  [3:0] sh_wd;
-
+    // line buffer (see the header)
+    logic  [5:0] fl [1024];             // {c, s, pre[1:0], scls[1:0]}
+    logic [18:0] dl [1024];             // {c, idx[10:0], cls[1:0], s, pre[1:0], scls[1:0]}
+    logic  [9:0] f_ra, f_wa;
+    logic  [5:0] f_q, f_wd;
+    logic        f_we;
+    logic [18:0] d_wd;
+    // pixel pipeline, stage 1: the pixel whose flags are being read now
+    logic        p1_v;
+    logic  [9:0] p1_a;
+    logic  [3:0] p1_pen;
+    logic  [8:0] clr_x;
+    // the last flags written, for a read that raced its write
+    logic        lw_v;
+    logic  [9:0] lw_a;
+    logic  [5:0] lw_d;
+    always_ff @(posedge clk) begin
+        if (f_we) begin fl[f_wa] <= f_wd; dl[f_wa] <= d_wd; end
+        f_q <= fl[f_ra];
+    end
     assign busy = (es != E_IDLE);
 
     localparam int XOFF [8] = '{0, 1, 4, 5, 16, 17, 20, 21};
@@ -306,19 +323,44 @@ module moo_sprites (
     wire  [3:0] pen = spen(rowd, 4'(acc >>> 16));
     wire signed [16:0] X = sx + pi;
     wire  [8:0] Xu = X[8:0];
-    wire        claimed  = eb ? claim1[Xu] : claim0[Xu];
-    wire        shadowed = eb ? shd1[Xu]   : shd0[Xu];
+    assign f_ra = {eb, Xu};
+
+    // stage 1: decide on the flags just read and write both RAMs
+    always_ff @(posedge clk) begin
+        f_we <= 1'b0;
+        lw_v <= 1'b0;
+        if (es == E_CLR) begin
+            f_we <= 1'b1; f_wa <= {eb, clr_x}; f_wd <= 6'd0; d_wd <= 19'd0;
+        end else if (p1_v) begin
+            logic [5:0] cur;
+            cur = (lw_v && lw_a == p1_a) ? lw_d : f_q;
+            if (p1_pen != 4'd15 || !shd_on) begin
+                if (!cur[5]) begin
+                    f_we <= 1'b1; f_wa <= p1_a; f_wd <= {1'b1, cur[4:0]};
+                    d_wd <= {1'b1, {pbase, 4'b0000} + {7'd0, p1_pen}, cls, cur[4:0]};
+                    lw_v <= 1'b1; lw_a <= p1_a; lw_d <= {1'b1, cur[4:0]};
+                end
+            end else if (!cur[5] && !cur[4]) begin
+                f_we <= 1'b1; f_wa <= p1_a; f_wd <= {2'b01, preset, cls};
+                d_wd <= {1'b0, 11'd0, 2'd0, 1'b1, preset, cls};
+                lw_v <= 1'b1; lw_a <= p1_a; lw_d <= {2'b01, preset, cls};
+            end
+        end
+    end
 
     always_ff @(posedge clk) begin
-        c_we  <= 1'b0;
-        sh_we <= 1'b0;
+        p1_v <= 1'b0;
         if (es != E_IDLE && cyc != 16'hFFFF) cyc <= cyc + 16'd1;
         case (es)
             E_IDLE: if (start) begin
                 Y <= line; eb <= buf_sel; ei <= 9'd0; cyc <= 16'd0;
-                if (buf_sel) begin claim1 <= '0; shd1 <= '0; end
-                else         begin claim0 <= '0; shd0 <= '0; end
-                es <= E_NEXT;
+                clr_x <= 9'd40;
+                es <= E_CLR;
+            end
+            E_CLR: begin
+                // clear this half, x 40..423 (the write is in stage 1's block)
+                clr_x <= clr_x + 9'd1;
+                if (clr_x == 9'd423) es <= E_NEXT;
             end
             E_NEXT: begin
                 if (ei >= n_act) es <= E_IDLE;
@@ -367,15 +409,18 @@ module moo_sprites (
                 es <= E_V;
             end
             E_V: begin
-                // row k spans [oy + (zy*k + 0x800) >> 12, oy + (zy*(k+1) + 0x800) >> 12)
-                logic signed [16:0] t0, t1;
-                t0 = oy + 17'((accy + 27'h800) >> 12);
-                t1 = oy + 17'((accy + 27'(zy) + 27'h800) >> 12);
-                if (k == 4'd0 && $signed({8'd0, Y}) < t0) es <= E_NX;       // above the sprite
-                else if ($signed({8'd0, Y}) < t1) begin
-                    top <= t0; nxt <= t1; es <= E_R0;
-                end else if (k == 4'((1 << hl) - 1)) es <= E_NX;             // below it
-                else begin k <= k + 4'd1; accy <= accy + 27'(zy); end
+                // row k spans [oy + (zy*k + 0x800) >> 12, oy + (zy*(k+1) + 0x800) >> 12):
+                // the two edges here, the decision next clock
+                v_t0 <= oy + 17'((accy + 27'h800) >> 12);
+                v_t1 <= oy + 17'((accy + 27'(zy) + 27'h800) >> 12);
+                es <= E_VC;
+            end
+            E_VC: begin
+                if (k == 4'd0 && $signed({8'd0, Y}) < v_t0) es <= E_NX;     // above the sprite
+                else if ($signed({8'd0, Y}) < v_t1) begin
+                    top <= v_t0; nxt <= v_t1; es <= E_R0;
+                end else if (k == 4'((1 << hl) - 1)) es <= E_NX;           // below it
+                else begin k <= k + 4'd1; accy <= accy + 27'(zy); es <= E_V; end
             end
             E_R0: begin
                 logic [3:0] h;
@@ -399,24 +444,29 @@ module moo_sprites (
             E_R2: begin
                 // source row = (m * dy) >> 16, or (dsth - 1 - m) * dy >> 16 flipped
                 logic [32:0] pa, pb;
-                pa = 33'(m) * 33'(r_q);
-                pb = 33'(12'(dsth - 12'd1 - m)) * 33'(r_q);
+                pa = 33'(m[10:0]) * 33'(r_q);
+                pb = 33'(11'(dsth - 12'd1 - m)) * 33'(r_q);
                 row_a <= fy ? pb[19:16] : pa[19:16];
                 row_b <= fy ? pa[19:16] : pb[19:16];      // the second blit's, y-flipped
                 cx <= 4'd0; accx <= 27'd0; pass <= 1'b0;
                 es <= E_C0;
             end
             E_C0: begin
-                logic signed [16:0] s0, s1;
+                // the cell's two edges, registered: the mirror and cull
+                // decisions are the next state's (one state had both, and it
+                // was the video's slowest path)
+                c_s0 <= ox + 17'((accx + 27'h800) >> 12);
+                c_s1 <= ox + 17'((accx + 27'(zx) + 27'h800) >> 12);
+                es <= E_CA;
+            end
+            E_CA: begin
                 logic [3:0] w;
                 logic mirx, flx;
                 w = 4'(1 << wl);
                 mirx = w6[14];
                 flx = w0[12] && !mirx;                      // mirror x overrides flip x
-                s0 = ox + 17'((accx + 27'h800) >> 12);
-                s1 = ox + 17'((accx + 27'(zx) + 27'h800) >> 12);
-                sx <= s0;
-                zw <= 12'(s1 - s0);
+                sx <= c_s0;
+                zw <= 12'(c_s1 - c_s0);
                 if (mirx) begin
                     if ((!flx) ^ ({cx, 1'b0} < {1'b0, w})) begin tx <= xoff(3'(w - 4'd1 - cx + 4'(xa))); fx <= 1'b1; end
                     else begin tx <= xoff(3'(cx + 4'(xa))); fx <= 1'b0; end
@@ -424,9 +474,9 @@ module moo_sprites (
                     tx <= xoff(3'(flx ? (w - 4'd1 - cx + 4'(xa)) : (cx + 4'(xa))));
                     fx <= flx;
                 end
-                r_a <= (12'(s1 - s0) > 12'd2047) ? 11'd2047 : 11'(s1 - s0);
+                r_a <= (12'(c_s1 - c_s0) > 12'd2047) ? 11'd2047 : 11'(c_s1 - c_s0);
                 // culled (empty, or wholly outside x 40..423): on to the next cell
-                if (s1 <= s0 || s0 > 17'sd423 || s1 - 17'sd1 < 17'sd40) es <= E_R3;
+                if (c_s1 <= c_s0 || c_s0 > 17'sd423 || c_s1 - 17'sd1 < 17'sd40) es <= E_R3;
                 else es <= E_C1;
             end
             E_C1: begin
@@ -439,24 +489,14 @@ module moo_sprites (
             E_C2: begin
                 // r_q is dx; the fetch is in flight
                 dx <= r_q;
-                acc  <= fx ? 34'(34'(zw - 12'd1) - 34'(pi)) * 34'(r_q) : 34'(pi) * 34'(r_q);
+                acc  <= 34'(fx ? 11'(zw - 12'd1 - 12'(pi)) : 11'(pi)) * 34'(r_q);
                 step <= fx ? (34'sd0 - 34'(r_q)) : 34'(r_q);
                 if (rom_ack) begin rom_req <= 1'b0; rowd <= rom_q; es <= E_PIX; end
                 else es <= E_C2;
             end
             E_PIX: begin
-                if (pen != 4'd0) begin
-                    if (pen != 4'd15 || !shd_on) begin
-                        if (!claimed) begin
-                            if (eb) claim1[Xu] <= 1'b1; else claim0[Xu] <= 1'b1;
-                            c_we <= 1'b1; c_wa <= {eb, Xu};
-                            c_wd <= {{pbase, 4'b0000} + {7'd0, pen}, cls};
-                        end
-                    end else if (!claimed && !shadowed) begin
-                        if (eb) shd1[Xu] <= 1'b1; else shd0[Xu] <= 1'b1;
-                        sh_we <= 1'b1; c_wa <= {eb, Xu}; sh_wd <= {preset, cls};
-                    end
-                end
+                // stage 0: this pixel's flags are read this clock (f_ra)
+                p1_v <= (pen != 4'd0); p1_a <= {eb, Xu}; p1_pen <= pen;
                 acc <= acc + step;
                 pi  <= pi + 17'sd1;
                 if (pi == pi1) es <= E_R3;
@@ -478,15 +518,13 @@ module moo_sprites (
         if (rst) begin es <= E_IDLE; rom_req <= 1'b0; missed <= 1'b0; worst_line <= 16'd0; end
     end
 
-    // line buffer data: engine writes, mixer reads
-    always_ff @(posedge clk) begin
-        if (c_we)  cbuf[c_wa] <= c_wd;
-        if (sh_we) sbuf[c_wa] <= sh_wd;
-        mx_cdata <= cbuf[{mx_buf, mx_x}];
-        mx_sdata <= sbuf[{mx_buf, mx_x}];
-        mx_claim  <= mx_buf ? claim1[mx_x] : claim0[mx_x];
-        mx_shadow <= mx_buf ? shd1[mx_x]   : shd0[mx_x];
-    end
+    // the mixer's read port
+    logic [18:0] mx_q;
+    always_ff @(posedge clk) mx_q <= dl[{mx_buf, mx_x}];
+    assign mx_claim  = mx_q[18];
+    assign mx_cdata  = mx_q[17:5];
+    assign mx_shadow = mx_q[4];
+    assign mx_sdata  = mx_q[3:0];
 endmodule
 
 `default_nettype wire

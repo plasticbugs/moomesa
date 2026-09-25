@@ -7,11 +7,16 @@
 //   obj_machine/Vmoomesa_core moomesa.rom [-frames N] [-o DIR] [-snap a,b,..]
 //        [-every N] [-coin F] [-start F] [-play F] [-lat N] [-wav file] [-service]
 #include "Vmoomesa_core.h"
+#ifdef TRACE
+#include "Vmoomesa_core___024root.h"
+#endif
 #include "verilated.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <set>
+#include <map>
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <zlib.h>
@@ -67,6 +72,8 @@ int main(int argc, char **argv) {
     int frames = 60, every = 0, coin = 600, start = 700, play = 1000;
     bool service = false;
     std::set<int> snaps;
+    int trace_from = -1, trace_to = -1, dump_at = -1;
+    std::string dump_path;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         auto nxt = [&]() { return std::string(i + 1 < argc ? argv[++i] : "0"); };
@@ -79,6 +86,8 @@ int main(int argc, char **argv) {
         else if (a == "-lat") lat = atoi(nxt().c_str());
         else if (a == "-wav") wavp = nxt();
         else if (a == "-service") service = true;
+        else if (a == "-dump") { std::string t = nxt(); dump_at = atoi(t.c_str()); dump_path = t.substr(t.find(':') + 1); }
+        else if (a == "-trace") { std::string t = nxt(); trace_from = atoi(t.c_str()); trace_to = atoi(t.c_str() + t.find('-') + 1); }
         else if (a == "-snap") { std::string s = nxt(); size_t p = 0; while (p < s.size()) { snaps.insert(atoi(s.c_str() + p)); p = s.find(',', p); if (p == std::string::npos) break; p++; } }
         else if (a[0] != '+') romp = a;
     }
@@ -130,6 +139,39 @@ int main(int argc, char **argv) {
         dut->p1 = p1; dut->in0 = in0; dut->test_n = !(service && frame < 400);
         tick(); clk++;
         statusor |= dut->dbg_status;
+#ifdef TRACE
+        static std::map<uint32_t, long> pchist;
+        if (frame >= trace_from && frame <= trace_to) {
+            auto *rr = dut->rootp;
+            // instruction fetches (function code x10), bucketed by 16 bytes
+            if (!rr->moomesa_core__DOT__ASn && rr->moomesa_core__DOT__FC1 && !rr->moomesa_core__DOT__FC0 && !rr->moomesa_core__DOT__as_d)
+                pchist[(dut->dbg_addr * 2) & ~0xf]++;
+        }
+        if (frame == trace_to + 1 && !pchist.empty()) {
+            std::vector<std::pair<long, uint32_t>> v;
+            for (auto &kv : pchist) v.push_back({kv.second, kv.first});
+            std::sort(v.rbegin(), v.rend());
+            printf("fetch histogram, frames %d-%d:\n", trace_from, trace_to);
+            for (size_t i = 0; i < v.size() && i < 25; i++) printf("  %06x  %ld\n", v[i].second, v[i].first);
+            pchist.clear();
+        }
+        if (frame >= trace_from && frame <= trace_to && getenv("TRACE_EVENTS")) {
+            // bus events on the shared slave bus, and the interrupt lines
+            auto *r = dut->rootp;
+            static int i4 = 0, i5 = 0;
+            int n4 = r->moomesa_core__DOT__irq4, n5 = r->moomesa_core__DOT__irq5;
+            if (n4 != i4 || n5 != i5) printf("f%d c%llu line %d: irq4 %d irq5 %d  pc~%06x\n", frame, (unsigned long long)clk,
+                                             r->moomesa_core__DOT__u_video__DOT__vpos, n4, n5, dut->dbg_addr * 2);
+            i4 = n4; i5 = n5;
+            if (r->moomesa_core__DOT__s_req && !r->moomesa_core__DOT__s_rnw) {
+                uint32_t a = r->moomesa_core__DOT__s_addr * 2;
+                if (a == 0x0de000 || a == 0x18004a || a == 0x0c2004 || a == 0x0d0018)
+                    printf("f%d c%llu line %d: write %06x = %04x be %d\n", frame, (unsigned long long)clk,
+                           r->moomesa_core__DOT__u_video__DOT__vpos, a, r->moomesa_core__DOT__s_d, r->moomesa_core__DOT__s_be);
+            }
+            if (r->moomesa_core__DOT__u_video__DOT__dma_done) printf("f%d c%llu: dma_done (ctl2 %04x)\n", frame, (unsigned long long)clk, r->moomesa_core__DOT__ctl2);
+        }
+#endif
         if (dut->pix_ce) {
             if (dut->de) { if (px < 384 && py < 224) fb[py * 384 + px] = dut->rgb; px++; }
             if (dut->hblank && !hb_d) { if (px > 0) py++; px = 0; }
@@ -137,6 +179,38 @@ int main(int argc, char **argv) {
             if (dut->vblank && !vb_d) {
                 frame++;
                 bool keep = snaps.count(frame) || (every && frame % every == 0);
+#ifdef TRACE
+                if (frame == dump_at) {
+                    // the video state as tools/dump_state.lua writes MAME's (MOOS v1),
+                    // with this frame's picture, so tools/moo_render.py can draw it
+                    auto *r = dut->rootp;
+                    FILE *d = fopen(dump_path.c_str(), "wb");
+                    auto u16 = [&](uint16_t v) { fwrite(&v, 2, 1, d); };
+                    auto u32 = [&](uint32_t v) { fwrite(&v, 4, 1, d); };
+                    fwrite("MOOS", 1, 4, d); u32(1); u32(frame);
+                    for (int i = 0; i < 32; i++) u16(r->moomesa_core__DOT__u_video__DOT__vac[i]);
+                    for (int i = 0; i < 4; i++) u16(r->moomesa_core__DOT__u_video__DOT__vsc[i]);
+                    std::vector<uint16_t> vr(69632, 0);
+                    const int mp[4] = {0, 1, 4, 5};
+                    for (int e = 0; e < 8192; e++) {
+                        uint32_t v = r->moomesa_core__DOT__u_video__DOT__vram[e];
+                        int base = mp[e >> 11] * 4096 + 2 * (e & 0x7ff);
+                        vr[base] = v >> 16; vr[base + 1] = v & 0xffff;
+                    }
+                    fwrite(vr.data(), 2, vr.size(), d);
+                    for (int i = 0; i < 8; i++) { uint8_t b = r->moomesa_core__DOT__u_video__DOT__u_spr__DOT__k246[i]; fwrite(&b, 1, 1, d); }
+                    for (int i = 0; i < 16; i++) u16(0);
+                    for (int i = 0; i < 2048; i++) u16(r->moomesa_core__DOT__u_video__DOT__u_spr__DOT__lst[i & 7][i >> 3]);
+                    for (int i = 0; i < 16; i++) { uint8_t b = r->moomesa_core__DOT__u_video__DOT__u_mix__DOT__r251[i]; fwrite(&b, 1, 1, d); }
+                    for (int i = 0; i < 32; i++) u16(i < 16 ? r->moomesa_core__DOT__u_video__DOT__u_mix__DOT__r338[i] : 0);
+                    for (int i = 0; i < 2048; i++) { uint32_t v = r->moomesa_core__DOT__u_video__DOT__u_mix__DOT__pal[i]; u16(v & 0xffff); u16(v >> 16); }
+                    for (int i = 0; i < 32768; i++) u16(r->moomesa_core__DOT__u_video__DOT__sram[i]);
+                    u16(384); u16(224);
+                    for (auto v : fb) u32(v);
+                    fclose(d);
+                    fprintf(stderr, "dumped the video state at frame %d to %s\n", frame, dump_path.c_str());
+                }
+#endif
                 if (keep) {
                     char n[512]; snprintf(n, sizeof n, "%s/frame_%05d.png", out.c_str(), frame);
                     write_png(n, 384, 224, fb);

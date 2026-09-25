@@ -122,7 +122,7 @@ module moo_mixer (
 
     // ------------------------------------------------------------ palette
     // 2048 x 32, xRGB_888: word 2i = {x, R}, word 2i+1 = {G, B}
-    logic [3:0][7:0] pal [2048];
+    (* ramstyle = "no_rw_check" *) logic [3:0][7:0] pal [2048];
     logic [31:0] pq_cpu, pq_vid;
     logic [10:0] pv_addr;
     // byte enables: word 2i is bytes 1:0 of entry i, word 2i+1 bytes 3:2
@@ -173,12 +173,11 @@ module moo_mixer (
     logic [1:0]  preset;
     logic [23:0] c1, c2, px;
 
-    // the final colour (latched at ph 9)
+    // the final colour: the blend latched at ph 9, the shadow at ph 10
+    logic [23:0] base;
     logic [23:0] n_px;
     always_comb begin
-        logic [23:0] base;
         logic [3:0] si;
-        base = useblend ? blend(c2, c1, alpha) : c1;
         si = 4'd2 + {preset, 1'b0} + {2'd0, preset};         // SHAD1R + 3 * preset
         if (opA || sprv) n_px = c1;
         else if (shdv && preset != 2'd3)
@@ -261,7 +260,8 @@ module moo_mixer (
         if (ph == 4'd4) pv_addr <= src1;
         if (ph == 4'd6) begin c1 <= s1bg ? bg : pen_rgb(pq_vid); pv_addr <= src2; end
         if (ph == 4'd8) c2 <= s2bg ? bg : pen_rgb(pq_vid);
-        if (ph == 4'd9) begin
+        if (ph == 4'd9) base <= useblend ? blend(c2, c1, alpha) : c1;
+        if (ph == 4'd10) begin
             px         <= n_px;
             vis_d      <= vis_q;
             dbg_index  <= (opA || sprv || opF || opM || opB) ? src1 : 11'h7FF;

@@ -53,7 +53,7 @@ module k054539 (
     `include "k054539_tables.svh"
 
     // ------------------------------------------------------------ registers
-    logic  [7:0] regs [1024];           // 000-22F; the flops below shadow some
+    (* ramstyle = "no_rw_check" *) logic  [7:0] regs [1024];           // 000-22F; the flops below shadow some
     logic  [9:0] ra;                    // engine read address
     logic  [7:0] rq, zq;
     always_ff @(posedge clk) begin
@@ -174,7 +174,7 @@ module k054539 (
     // ------------------------------------------------------------ the pass
     typedef enum logic [4:0] {
         P_IDLE, P_RV0, P_RV1, P_RV2, P_CH, P_RD, P_RDW, P_SETUP, P_STEP, P_FETCH, P_FWAIT,
-        P_BYTE, P_ENDCHK, P_DONE, P_REVR, P_REVW, P_NEXT, P_OUT, P_ZROM, P_ZRAM
+        P_BYTE, P_ENDCHK, P_DONE, P_REVR, P_REVT, P_REVW, P_NEXT, P_OUT, P_ZROM, P_ZRAM
     } pst_t;
     pst_t ps;
     logic  [2:0] ch;
@@ -385,14 +385,18 @@ module k054539 (
                 rw_a <= {1'b0, widx};
                 ps <= P_REVR;
             end
-            P_REVR: ps <= P_REVW;
+            // rbase[...] += int16(cur_val * rbvol), truncated toward zero:
+            // product, truncation and add a clock each
+            P_REVR: begin
+                rv_pr <= 34'($signed(wval)) * 34'($signed({1'b0, rbg}));
+                ps <= P_REVT;
+            end
+            P_REVT: begin
+                rv_add <= (rv_pr < 0) ? (16'd0 - 16'((34'sd0 - rv_pr) >>> 16)) : 16'(rv_pr >>> 16);
+                ps <= P_REVW;
+            end
             P_REVW: begin
-                // rbase[...] += int16(cur_val * rbvol), truncated toward zero
-                logic signed [33:0] pr;
-                logic signed [15:0] add;
-                pr = 34'(wval) * 34'($signed({1'b0, rbg}));
-                add = (pr < 0) ? (16'd0 - 16'((34'sd0 - pr) >>> 16)) : 16'(pr >>> 16);
-                rw_d <= rw_q + add; rw_we <= 1'b1;
+                rw_d <= rw_q + rv_add; rw_we <= 1'b1;
                 ps <= P_NEXT;
             end
             P_NEXT: begin
@@ -421,6 +425,8 @@ module k054539 (
     logic       second_byte;
     logic [7:0] lo_byte;
     logic       zr_done;
+    logic signed [33:0] rv_pr;
+    logic signed [15:0] rv_add;
     logic        tick;
     logic [15:0] pcyc;
     logic  [7:0] preads;
