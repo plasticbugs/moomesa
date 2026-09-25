@@ -1,4 +1,4 @@
-My Core
+Cowboys of Moo Mesa
 MANUFACTURER, YEAR
 
 One paragraph on what the game is and
@@ -7,9 +7,9 @@ characters only, 32 lines at most,
 * for bullets.
 
 ROMs are not included. Build the image
-from your own MAME mycore romset with
-mra_build.py and mycore.mra, and copy
-it to Assets/mycore/common/mycore.rom
+from your own MAME moomesa romset with
+mra_build.py and moomesa.mra, and copy
+it to Assets/moomesa/common/moomesa.rom
 
 * A / Y  button 1
 * B / X  button 2
