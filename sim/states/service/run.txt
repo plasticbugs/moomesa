@@ -1,0 +1,13 @@
+dumped 500
+dumped 800
+dumped 1100
+dumped 1400
+dumped 1700
+dumped 2000
+frames 2131
+want 1400 ok
+want 1100 ok
+want 800 ok
+want 500 ok
+want 2000 ok
+want 1700 ok

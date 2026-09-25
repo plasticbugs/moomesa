@@ -1,0 +1,17 @@
+dumped 1073
+dumped 9038
+dumped 9408
+dumped 11043
+dumped 11164
+dumped 12716
+dumped 21597
+dumped 35499
+frames 35867
+want 9408 ok
+want 9038 ok
+want 1073 ok
+want 35499 ok
+want 11043 ok
+want 21597 ok
+want 11164 ok
+want 12716 ok

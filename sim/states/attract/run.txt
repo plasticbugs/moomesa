@@ -1,0 +1,31 @@
+dumped 300
+dumped 600
+dumped 900
+dumped 1200
+dumped 1500
+dumped 1800
+dumped 2100
+dumped 2400
+dumped 2700
+dumped 3000
+dumped 3300
+dumped 3600
+dumped 4200
+dumped 4800
+dumped 5400
+frames 5505
+want 2100 ok
+want 5400 ok
+want 4800 ok
+want 4200 ok
+want 3600 ok
+want 3300 ok
+want 3000 ok
+want 2700 ok
+want 2400 ok
+want 300 ok
+want 600 ok
+want 900 ok
+want 1200 ok
+want 1500 ok
+want 1800 ok

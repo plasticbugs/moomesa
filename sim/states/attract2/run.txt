@@ -1,0 +1,17 @@
+dumped 959
+dumped 1080
+dumped 2432
+dumped 4006
+dumped 5167
+dumped 5267
+dumped 6004
+dumped 7147
+frames 7221
+want 959 ok
+want 5167 ok
+want 1080 ok
+want 2432 ok
+want 7147 ok
+want 6004 ok
+want 5267 ok
+want 4006 ok
