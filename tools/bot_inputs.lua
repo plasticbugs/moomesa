@@ -11,7 +11,7 @@
 local M = {}
 function M.apply(mac, frames, COIN, START)
   local function press(port, field, on)
-    mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1)  -- ACTIVE_LOW
+    mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0)  -- nonzero = pressed; see tools/bk2_inputs.lua
   end
   if frames == COIN then press(":IN0", "Coin 1", true) end
   if frames == COIN + 8 then press(":IN0", "Coin 1", false) end

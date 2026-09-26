@@ -6,6 +6,7 @@
 //
 //   obj_machine/Vmoomesa_core moomesa.rom [-frames N] [-o DIR] [-snap a,b,..]
 //        [-every N] [-coin F] [-start F] [-play F] [-lat N] [-wav file] [-service]
+//        [-tas "Input Log.txt" [-tasoff N]]
 #include "Vmoomesa_core.h"
 #ifdef TRACE
 #include "Vmoomesa_core___024root.h"
@@ -70,6 +71,13 @@ int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     std::string romp, out = ".", wavp;
     int frames = 60, every = 0, coin = 600, start = 700, play = 1000;
+    // -tas: a BizHawk movie's "Input Log.txt", one line per frame, as
+    // tools/bk2_inputs.lua gives it to MAME (columns: coins 1-4, services 1-4,
+    // service mode, starts 1,3,2,4, then per player button 1, button 2, down,
+    // left, right, up)
+    std::string tas_path;
+    int tas_off = 0;
+    std::vector<std::string> tas;
     bool service = false;
     std::set<int> snaps;
     int trace_from = -1, trace_to = -1, dump_at = -1;
@@ -83,6 +91,8 @@ int main(int argc, char **argv) {
         else if (a == "-coin") coin = atoi(nxt().c_str());
         else if (a == "-start") start = atoi(nxt().c_str());
         else if (a == "-play") play = atoi(nxt().c_str());
+        else if (a == "-tas") tas_path = nxt();
+        else if (a == "-tasoff") tas_off = atoi(nxt().c_str());
         else if (a == "-lat") lat = atoi(nxt().c_str());
         else if (a == "-wav") wavp = nxt();
         else if (a == "-service") service = true;
@@ -120,6 +130,19 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 16; i++) tick();
     dut->rst = 0;
 
+    if (!tas_path.empty()) {
+        FILE *tf = fopen(tas_path.c_str(), "r");
+        if (!tf) { fprintf(stderr, "cannot read %s\n", tas_path.c_str()); return 2; }
+        char line[256];
+        while (fgets(line, sizeof line, tf)) {
+            if (line[0] != '|') continue;
+            std::string r;
+            for (char *c = line; *c && *c != '\n'; c++) if (*c != '|') r += *c;
+            tas.push_back(r);
+        }
+        fclose(tf);
+        printf("tas: %zu frames\n", tas.size());
+    }
     std::vector<int16_t> wav;
     std::vector<uint32_t> fb(384 * 224, 0);
     int frame = 0, px = 0, py = 0;
@@ -136,7 +159,26 @@ int main(int argc, char **argv) {
             if ((frame / 9) % 2 == 0) p1 &= ~0x10;
             if ((frame / 61) % 7 == 0) p1 &= ~0x20;
         }
-        dut->p1 = p1; dut->in0 = in0; dut->test_n = !(service && frame < 400);
+        bool tsvc = false;
+        if (!tas.empty()) {
+            p1 = 0xff; in0 = 0xff;
+            int k = frame + tas_off;
+            if (k >= 0 && k < (int)tas.size()) {
+                const std::string &r = tas[k];
+                auto on = [&](int c) { return c < (int)r.size() && r[c] != '.'; };
+                for (int c = 0; c < 4; c++) if (on(c)) in0 &= ~(1 << c);
+                for (int c = 0; c < 4; c++) if (on(4 + c)) in0 &= ~(0x10 << c);
+                tsvc = on(8);
+                if (on(9)) p1 &= ~0x80;
+                if (on(13)) p1 &= ~0x10;
+                if (on(14)) p1 &= ~0x20;
+                if (on(15)) p1 &= ~0x08;
+                if (on(16)) p1 &= ~0x01;
+                if (on(17)) p1 &= ~0x02;
+                if (on(18)) p1 &= ~0x04;
+            }
+        }
+        dut->p1 = p1; dut->in0 = in0; dut->test_n = !((service && frame < 400) || tsvc);
         tick(); clk++;
         statusor |= dut->dbg_status;
 #ifdef TRACE

@@ -1,0 +1,13 @@
+dumped 4620
+dumped 16560
+dumped 22440
+dumped 28800
+dumped 37380
+dumped 46320
+frames 46757
+want 4620 ok
+want 46320 ok
+want 28800 ok
+want 22440 ok
+want 37380 ok
+want 16560 ok

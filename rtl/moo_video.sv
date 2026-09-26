@@ -161,12 +161,12 @@ module moo_video (
     always_ff @(posedge clk) sq_dma <= sram[sd_addr];
 
     // ------------------------------------------------------------ engines
-    logic [3:0][7:0] tlb [1024];        // tile line buffer {buf, x} -> 4 layers
+    logic [3:0][9:0] tlb [1024];        // tile line buffer {buf, x} -> 4 layers {mix, colour, pen}
     logic        tl_we;
     logic [11:0] tl_waddr;
-    logic  [7:0] tl_wd;
+    logic  [9:0] tl_wd;
     logic  [9:0] tl_raddr;
-    logic [31:0] tl_q;
+    logic [39:0] tl_q;
     always_ff @(posedge clk) begin
         if (tl_we) tlb[{tl_waddr[11], tl_waddr[8:0]}][tl_waddr[10:9]] <= tl_wd;
         tl_q <= tlb[tl_raddr];

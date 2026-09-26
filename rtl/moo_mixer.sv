@@ -6,9 +6,16 @@
 // Per pixel, as MAME's screen_update composes it:
 //   background colour; the three sorted layers B/C/D back to front, each
 //   opaque pen tagging the pixel 1, 2, 4 (the back one only when its
-//   priority is below CI1's; the front one alpha-blended when K054338 MIXPRI
-//   is set); the claiming sprite if its class lets it in front of the tag,
+//   priority is below CI1's; the front one mixed per tile, below); the claiming sprite if its class lets it in front of the tag,
 //   else the recorded shadow if its class does; layer A on top of all.
+//
+// Mixing, the board's rule and not MAME's: the two low bits of a tile's colour
+// (which MAME's tile callback drops) are its K054338 mix code.  0 is solid;
+// 1..3 select a PBLEND level as set_alpha_level(m) reads it, and a level of 0
+// leaves the pixel out.  MAME instead blends the whole front layer at level 1
+// while MIXPRI is set, which leaves the last boss's fog solid after the game
+// fades it and clears MIXPRI, and hides the intro's ground (docs/hardware.md
+// 7.3).  Only the front layer is mixed, as in MAME.
 //
 // The work for pixel h starts at the dot enable where hpos becomes h and the
 // colour is registered on `rgb` at the next one: one dot of latency, which
@@ -44,9 +51,9 @@ module moo_mixer (
     input  logic  [1:0] pal_be,
     output logic [15:0] pal_q,
 
-    // tile line buffer read: {buf, x} -> 4 x {colour, pen}, one clock latency
+    // tile line buffer read: {buf, x} -> 4 x {mix, colour, pen}, one clock latency
     output logic  [9:0] tl_addr,
-    input  logic [31:0] tl_q,
+    input  logic [39:0] tl_q,
     input  logic  [3:0] tl_valid,       // layers built for the shown line
 
     // sprite line buffer read (moo_sprites mixer port)
@@ -115,11 +122,16 @@ module moo_mixer (
     end
     wire [23:0] bg     = {r338[0][7:0], r338[1]};
     wire        noclip = r338[15][5];
-    wire        mixpri = r338[15][1];
-    // set_alpha_level(1): the low byte of PBLEND, 5 bits expanded to 8
-    wire  [4:0] mixlv  = r338[13][4:0];
-    logic [7:0] alpha;                  // registered: it feeds the blend multipliers
-    always_ff @(posedge clk) alpha <= mixpri ? {mixlv, mixlv[4:2]} : 8'hFF;
+    // set_alpha_level(m), m = 1..3: PBLEND word 13 low byte, word 14 high
+    // byte, word 14 low byte; 5 bits expanded to 8.  Registered.
+    logic [7:0] lv [4];
+    always_ff @(posedge clk) begin
+        lv[0] <= 8'hFF;
+        lv[1] <= {r338[13][4:0],  r338[13][4:2]};
+        lv[2] <= {r338[14][12:8], r338[14][12:10]};
+        lv[3] <= {r338[14][4:0],  r338[14][4:2]};
+    end
+    logic [7:0] alpha;                  // the front layer's, for the pixel in hand
 
     // ------------------------------------------------------------ palette
     // 2048 x 32, xRGB_888: word 2i = {x, R}, word 2i+1 = {G, B}
@@ -197,6 +209,7 @@ module moo_mixer (
     // what the pixel is made of, from the line buffers (latched at ph 2)
     logic        n_opA, n_opB, n_opM, n_opF, n_sprv, n_shdv;
     logic [10:0] n_iA, n_iB, n_iM, n_iF;
+    logic  [7:0] n_aF;
     function automatic [7:0] cmask(input [1:0] c);
         case (c)
             2'd0: cmask = 8'h00;
@@ -206,20 +219,22 @@ module moo_mixer (
         endcase
     endfunction
     always_comb begin
-        logic [7:0] eA, eF, eM, eB, cm_s, cm_h;
+        logic [9:0] eA, eF, eM, eB;
+        logic [7:0] cm_s, cm_h;
         logic [2:0] tag;
-        eA = tl_q[7:0];
-        eB = tl_q[8 * int'(ord[0]) +: 8];
-        eM = tl_q[8 * int'(ord[1]) +: 8];
-        eF = tl_q[8 * int'(ord[2]) +: 8];
+        eA = tl_q[9:0];
+        eB = tl_q[10 * int'(ord[0]) +: 10];
+        eM = tl_q[10 * int'(ord[1]) +: 10];
+        eF = tl_q[10 * int'(ord[2]) +: 10];
+        n_aF = lv[eF[9:8]];
         n_opA = tl_valid[0] && eA[3:0] != 4'd0;
         n_opB = tl_valid[ord[0]] && eB[3:0] != 4'd0 && back_drawn;
         n_opM = tl_valid[ord[1]] && eM[3:0] != 4'd0;
-        n_opF = tl_valid[ord[2]] && eF[3:0] != 4'd0 && alpha != 8'd0;
-        n_iA = lidx(eA, 2'd0);
-        n_iB = lidx(eB, ord[0]);
-        n_iM = lidx(eM, ord[1]);
-        n_iF = lidx(eF, ord[2]);
+        n_opF = tl_valid[ord[2]] && eF[3:0] != 4'd0 && n_aF != 8'd0;
+        n_iA = lidx(eA[7:0], 2'd0);
+        n_iB = lidx(eB[7:0], ord[0]);
+        n_iM = lidx(eM[7:0], ord[1]);
+        n_iF = lidx(eF[7:0], ord[2]);
         tag = {n_opF, n_opM, n_opB};
         cm_s = cmask(sp_cdata[1:0]);
         cm_h = cmask(sp_sdata[1:0]);
@@ -237,7 +252,7 @@ module moo_mixer (
             vis_q   <= visible;
         end
         if (ph == 4'd2) begin
-            opA <= n_opA; opB <= n_opB; opM <= n_opM; opF <= n_opF;
+            opA <= n_opA; opB <= n_opB; opM <= n_opM; opF <= n_opF; alpha <= n_aF;
             iA <= n_iA; iB <= n_iB; iM <= n_iM; iF <= n_iF; iS <= sp_cdata[12:2];
             sprv <= n_sprv; shdv <= n_shdv; preset <= sp_sdata[3:2];
         end

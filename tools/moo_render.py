@@ -17,7 +17,7 @@ The model also exposes the intermediate results the RTL is compared against
 reached the screen and whether it was shadowed -- the RTL outputs indices,
 so the frozen-state gate compares those, not only RGB.
 """
-import sys, os
+import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import moo_state, pngio
 
@@ -52,6 +52,11 @@ def sprite_cell(rom, code):
         rb = base + y * 8
         out.extend(nib(rom, rb, SNIB[x]) for x in range(16))
     return out
+
+
+# 'mame' (default): MAME's stand-in -- the front layer blended at PBLEND
+# level 1 while K054338 MIXPRI is set.  'board': per-tile mix codes.
+MIX_RULE = os.environ.get('MOO_MIX', 'mame')
 
 
 def alpha_blend(d, s, level):
@@ -138,7 +143,7 @@ def render(st, rom, want_index=False):
             for c in range(lw[L] + 1):
                 assoc[(((ly[L] + r) & 3) << 2) + ((lx[L] + c) & 3)] = L
 
-    def draw_layer(L, prio_code, alpha=255):
+    def draw_layer(L, prio_code, alpha=255, mix=None):
         if lw[L] or lh[L]:
             raise NotImplementedError('K056832 multi-page layer')
         page = (ly[L] << 2) + lx[L]
@@ -181,25 +186,29 @@ def render(st, rom, want_index=False):
                     code = st.vram[base + ti * 2 + 1]
                     flip = flipmask & ((attr >> FLIPS) & 3)
                     color = (attr & PALM1) | ((attr >> PALS2) & PALM2)
+                    color_raw = color
                     color = layer_colorbase[L] | ((color >> 2) & 0x0f)      # tile_callback
                     ry = (7 - py) if (flip & 2) else py
                     pix = tile_row(rom, code, ry)
                     if flip & 1:
                         pix = pix[::-1]
-                    t = (pix, (color % 128) * 16)
+                    t = (pix, (color % 128) * 16, color_raw & 3)
                     cache[col] = t
                 pen = t[0][sx & 7]
                 if pen == 0:
                     continue
                 i = y * BW + x
                 pidx = t[1] + pen
-                if alpha >= 255:
+                a = alpha if mix is None else mix[t[2]]
+                if a <= 0:
+                    continue
+                if a >= 255:
                     fr.rgb[i] = pens[pidx]
                     fr.idx[i] = pidx
                     fr.shd[i] = 0
                 else:                                   # scanline_draw_masked_rgb32_alpha
-                    fr.rgb[i] = alpha_blend(fr.rgb[i], pens[pidx], alpha)
-                    fr.idx[i] = (fr.idx[i], pidx, alpha)
+                    fr.rgb[i] = alpha_blend(fr.rgb[i], pens[pidx], a)
+                    fr.idx[i] = (fr.idx[i], pidx, a)
                 fr.pri[i] = (fr.pri[i] & 0xff) | prio_code
 
     if layerpri[0] < k251[1]:
@@ -212,7 +221,17 @@ def render(st, rom, want_index=False):
         mixset = k338[13] & 0xff
         mixlv = mixset & 0x1f
         alpha = ((mixlv << 3) | (mixlv >> 2)) & 0xff
-    if alpha > 0:
+    if MIX_RULE == 'board':
+        # The board's rule, as the final boss's fog shows it (docs/hardware.md
+        # 7.3): the two low bits of a tile's colour, which MAME's tile callback
+        # drops, pick a K054338 mix level per tile -- 0 solid, 1..3 the
+        # PBLEND entry set_alpha_level(m) reads -- whatever MIXPRI says.
+        def lvl(m):
+            mixset = k338[13 + ((m >> 1) & 1)] >> ((~m << 3) & 8) & 0xff
+            mixlv = mixset & 0x1f
+            return ((mixlv << 3) | (mixlv >> 2)) & 0xff
+        draw_layer(layer[2], 4, mix=[255, lvl(1), lvl(2), lvl(3)])
+    elif alpha > 0:
         draw_layer(layer[2], 4, alpha)
 
     draw_sprites(st, rom, fr, pens, layerpri, sprite_colorbase, shadow_tables, noclip)

@@ -16,8 +16,8 @@ DMA.  All of it is in the gateware; the machine is described in
 | Z80 @ 8 MHz | tv80 (Guy Hutchison) via `rtl/z80_cen.sv` | reports the sound ROM checksum MAME shows (151B) |
 | YM2151 | jt51 (Jose Tejada) | only as part of the whole mix against MAME's recording (below) |
 | K054539 | `rtl/k054539.sv`, from MAME's model | `sim/check_k539.sh`: MAME's own code fed the same 40 s of commands, max difference 4 LSB, 68.8 dB |
-| K054156/7 tilemaps, K053246/7 sprites, K053251, K054338 | `rtl/moo_*.sv` | `sim/run_video.sh`: pixel-identical to MAME on 47 frozen states |
-| video semantics | `tools/moo_render.py` (Python model) | pixel-identical to MAME on the same 47 states |
+| K054156/7 tilemaps, K053246/7 sprites, K053251, K054338 | `rtl/moo_*.sv` | `sim/run_video.sh`: 64 frozen states, 61 pixel-identical to MAME and 3 to the board's mixing rule where MAME is wrong |
+| video semantics | `tools/moo_render.py` (Python model) | pixel-identical to MAME on all 64 (MAME's rule), and the board's rule on the 3 |
 | ROM | Pocket SDRAM (`target/pocket/moomesa_mem.sv`) | `sim/run_mem.sh` at the loader's rate; `tools/verify_rom.py`: image byte-identical to MAME's regions |
 | every RAM | block RAM | — |
 | EEPROM (ER5911) | jt5911; default contents from the romset; saved to the SD card | round trip on hardware (settings kept across launches); a blank save is ignored (`sim/run_system.sh -save ff`) |
@@ -55,9 +55,11 @@ defaults.
 - the memory path: every region read back through the core's ports after a
   download at the loader's rate, 0 wrong, also with all five ports at once
   (`sim/run_mem.sh`);
-- the video: 47 frozen states from boot, attract, the intro's alpha-blended
-  fog, character select, play with up to 65 sprites, zoom, line scroll and
-  service mode, 0 differing pixels in the Python model and in the RTL;
+- the video: 64 frozen states from boot, attract, the intro's alpha-blended
+  fog, character select, play with up to 65 sprites, zoom, line scroll,
+  service mode, every map screen of a full playthrough and the final boss,
+  0 differing pixels in the Python model and in the RTL (against MAME, or
+  on 3 frames against the board's mixing rule -- below);
 - the sprite engine under overload: when a line cannot be finished in time
   it loses its farthest sprites, never a whole line (`sim/run_video.sh
   -slat N`; pictures in `artifacts/sprite_overload/`);
@@ -75,7 +77,9 @@ defaults.
   across launches (the save written to the card and read back).
 
 Not proven:
-- long play: later stages and bosses have not been compared with MAME;
+- long play beyond the frames captured: a TAS of the whole game
+  (`tools/bk2_inputs.lua`) now reaches every stage in MAME, but only the map
+  screens and the final boss are in the gate so far;
 - sprite shadows pixel for pixel (no captured frame has one; on hardware
   they match arcade footage by eye), sprite mirroring (never seen in 20
   minutes of MAME census), the protection DMA with a non-zero length (never
@@ -85,8 +89,14 @@ Not proven:
 Not modelled: flip screen.  Set in the game's service menu, it makes the
 tilemaps disappear (the panel's "unsupported video mode" square lights).
 
-Known differences from MAME: the object DMA takes real time (about 30 us)
-where MAME's is instant.  The interrupts follow MAME's order, which the game
+Known differences from MAME:
+- **Alpha mixing is per tile, as on the board.** MAME blends the front layer
+  whenever a K054338 bit (MIXPRI) is set; the board uses a mix code in each
+  tile's colour.  So here the final boss's fog fades away and stays gone
+  (MAME fades it, then draws it solid again for the whole fight), and the
+  intro's meteor lands on visible ground.  `docs/hardware.md` 7.3 has the
+  register trace it was worked out from.
+- The object DMA takes real time (about 30 us) where MAME's is instant.  The interrupts follow MAME's order, which the game
 depends on -- see `docs/hardware.md` section 4 for the black screen an earlier
 order produced.
 

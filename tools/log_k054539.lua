@@ -16,7 +16,7 @@ _G.KEEP[1] = sp:install_write_tap(0xe000, 0xe22f, "k539", function(o, d, m)
   f:write(string.format("%d %03x %02x\n", math.floor(t * 48000), o - 0xe000, d & 0xff))
 end)
 _G.KEEP.s = emu.add_machine_stop_notifier(function() f:close() end)
-local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1) end
+local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0) end  -- nonzero = pressed; see tools/bk2_inputs.lua
 _G.KEEP.n = emu.add_machine_frame_notifier(function()
   frames = frames + 1
   if COIN > 0 and frames == COIN then press(":IN0", "Coin 1", true) end

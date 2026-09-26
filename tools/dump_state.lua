@@ -9,6 +9,7 @@
 -- joystick walks right and fire is tapped, which reaches gameplay.
 -- CONTINUE=1 adds a credit and a start every 30 s (tools/census_sprites.lua
 -- does the same, so its frame numbers can be captured here).
+-- BK2_LOG=<Input Log.txt> replays a BizHawk movie instead (tools/bk2_inputs.lua).
 -- BOT=1 plays with tools/bot_inputs.lua instead, which reaches the map
 -- between stages (tools/bot_explore.lua finds the frames).
 -- SERVICE=1 holds the test switch from power-on (service mode), and
@@ -120,7 +121,7 @@ local function finish()
 end
 
 local function press(port, field, on)
-  mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1)  -- ACTIVE_LOW
+  mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0)  -- nonzero = pressed; see tools/bk2_inputs.lua
 end
 
 _G.KEEP = {}
@@ -129,6 +130,8 @@ local CONTINUE = os.getenv("CONTINUE") == "1"
 local SVC_STEP = tonumber(os.getenv("SVC_STEP") or "0")
 -- BOT=1: tools/bot_inputs.lua drives the inputs instead (BOT_LIB: its path)
 local BOT = os.getenv("BOT") == "1" and dofile(os.getenv("BOT_LIB") or "tools/bot_inputs.lua") or nil
+-- BK2_LOG=...: a BizHawk movie's inputs drive the machine (tools/bk2_inputs.lua)
+local TAS = os.getenv("BK2_LOG") and dofile(os.getenv("BK2_LIB") or "tools/bk2_inputs.lua").new(mac, os.getenv("BK2_LOG"), tonumber(os.getenv("BK2_OFFSET") or "0")) or nil
 
 _G.KEEP.s = emu.add_machine_stop_notifier(function()
   log:write(string.format("frames %d\n", frames))
@@ -143,8 +146,8 @@ end)
 _G.KEEP.n = emu.add_machine_frame_notifier(function()
   frames = frames + 1
   if not i246 then return end
-  if BOT then
-    BOT.apply(mac, frames, COIN, START)
+  if BOT or TAS then
+    if TAS then TAS.apply(frames) else BOT.apply(mac, frames, COIN, START) end
     if pending then finish() end
     if want[frames] then dump(frames) end
     return

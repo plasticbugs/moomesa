@@ -35,11 +35,23 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$states" ] || states=$(ls "$root"/sim/states/*/state_*.bin.gz)
 mkdir -p "$root/artifacts/rtl"
-fail=0; n=0
+# A state with a <state>.board.png beside it is one where MAME is known to be
+# wrong and the board's rule (tools/moo_render.py, MOO_MIX=board) is the
+# reference: the RTL must match that picture instead (docs/hardware.md 7.3).
+fail=0; n=0; nb=0
 for s in $states; do
     name=$(basename "$(dirname "$s")")_$(basename "$s" .bin.gz)
     n=$((n+1))
-    ./obj_video/Vmoo_video "$rom" "$s" $extra -png "$root/artifacts/rtl/$name.png" || fail=$((fail+1))
+    board="${s%.bin.gz}.board.png"
+    if [ -f "$board" ]; then
+        nb=$((nb+1))
+        ./obj_video/Vmoo_video "$rom" "$s" $extra -png "$root/artifacts/rtl/$name.png" >/dev/null || true
+        r=$(python3 "$root/tools/diff_frames.py" "$root/artifacts/rtl/$name.png" "$board" | tail -1)
+        echo "$s: against the board's rule: $r"
+        case "$r" in *" 0/"*) ;; *) fail=$((fail+1));; esac
+    else
+        ./obj_video/Vmoo_video "$rom" "$s" $extra -png "$root/artifacts/rtl/$name.png" || fail=$((fail+1))
+    fi
 done
-echo "$n states, $((n-fail)) pixel-identical to MAME"
+echo "$n states, $((n-fail)) pixel-identical to their reference ($((n-nb)) MAME, $nb the board's rule)"
 [ $fail -eq 0 ]

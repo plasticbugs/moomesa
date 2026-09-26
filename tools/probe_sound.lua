@@ -30,7 +30,7 @@ _G.KEEP.s = emu.add_machine_stop_notifier(function()
   for _, k in ipairs(ks) do f:write(string.format("%-40s %d\n", k, seen[k])) end
   f:close()
 end)
-local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1) end
+local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0) end  -- nonzero = pressed; see tools/bk2_inputs.lua
 _G.KEEP.n = emu.add_machine_frame_notifier(function()
   frames = frames + 1
   if frames == 600 then press(":IN0", "Coin 1", true) end

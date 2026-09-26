@@ -154,3 +154,10 @@ that died belong here as much as the one that lived.
   plant), shows the same: one trophy (Niagara Desert), flags elsewhere, not
   blinking over the frames captured.  The RTL draws those six map frames
   pixel-identical to MAME (sim/states/map).  The game's own behaviour.
+- 2026-09-25: final boss's fog stays solid gray -- as in MAME.  Traced with
+  the ezgames69 TAS (tools/bk2_inputs.lua): the game fades PBLEND 1F..01 then
+  clears MIXPRI; MAME ties blending to MIXPRI and redraws the fog solid.  The
+  board mixes per tile (colour low bits, docs/hardware.md 7.3).  Bitstream
+  7974346f29057c1a1b30df40c9479c3f (compile 18) has the per-tile rule.
+  Quick check on hardware: the attract intro's meteor should land on visible
+  ground (artifacts/fog/intro_1200_*).

@@ -51,10 +51,10 @@ module moo_tiles (
     input  logic        rom_ack,
     input  logic [31:0] rom_q,
 
-    // line buffer: {buf, layer, x} <- {colour, pen}
+    // line buffer: {buf, layer, x} <- {mix code, colour, pen}
     output logic        lb_we,
     output logic [11:0] lb_addr,
-    output logic  [7:0] lb_d
+    output logic  [9:0] lb_d
 );
     // ------------------------------------------------ per-layer set-up
     logic [1:0] L;
@@ -121,6 +121,7 @@ module moo_tiles (
     logic  [5:0] k;            // tile being decoded 0..48
     logic  [1:0] fl;
     logic  [3:0] col4;
+    logic  [1:0] mix2;
     logic [18:0] want;         // {code, row} of the tile being decoded
     logic        blank, reuse;
     logic [18:0] last;         // {code, row} of the row held in rom_q
@@ -136,6 +137,7 @@ module moo_tiles (
     logic  [8:0] w_x;          // screen x of dot 0 (may be < 40)
     logic [31:0] w_pens;       // 8 pens, dot 0 in [31:28]
     logic  [3:0] w_col;
+    logic  [1:0] w_mix;        // the colour's two low bits: the K054338 mix code
     logic  [1:0] w_L;
 
     wire  [15:0] dy   = regs[{3'b100, L}];
@@ -165,7 +167,7 @@ module moo_tiles (
             if ((w_x + {6'd0, w_i}) >= 9'd40 && (w_x + {6'd0, w_i}) <= 9'd423) begin
                 lb_we   <= 1'b1;
                 lb_addr <= {bsel, w_L, w_x + {6'd0, w_i}};
-                lb_d    <= {w_col, w_pens[31:28]};
+                lb_d    <= {w_mix, w_col, w_pens[31:28]};
             end
             w_pens <= {w_pens[27:0], 4'd0};
             w_i    <= w_i + 3'd1;
@@ -210,9 +212,12 @@ module moo_tiles (
             T_E2: begin
                 // vr_q is the entry: decode it, and ask the blank table
                 logic [1:0] f;
+                logic [5:0] tc;
                 f = tflip(vr_q[31:16], fbits) & flm;
+                tc = tcolor(vr_q[31:16], fbits);
                 fl   <= f;
-                col4 <= 4'(tcolor(vr_q[31:16], fbits) >> 2);
+                col4 <= tc[5:2];
+                mix2 <= tc[1:0];
                 want <= {vr_q[15:0], f[1] ? ~srow[2:0] : srow[2:0]};
                 st <= T_F;
                 reuse <= last_v && (last == {vr_q[15:0], f[1] ? ~srow[2:0] : srow[2:0]});
@@ -231,7 +236,7 @@ module moo_tiles (
                 end
             end
             T_HAND: if (!w_busy) begin
-                w_busy <= 1'b1; w_i <= 3'd0; w_L <= L; w_col <= col4;
+                w_busy <= 1'b1; w_i <= 3'd0; w_L <= L; w_col <= col4; w_mix <= mix2;
                 w_pens <= blank ? 32'd0 : order(lastq, fl[0]);
                 w_x    <= 9'd40 + {k, 3'b000} - {6'd0, xs[2:0]};
                 k      <= k + 6'd1;

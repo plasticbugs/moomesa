@@ -66,7 +66,7 @@ tap("vram", 0x1a0000, 0x1a3fff, function(o, d, m)
 end)
 
 local function press(port, field, on)
-  mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1)  -- ACTIVE_LOW
+  mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0)  -- nonzero = pressed; see tools/bk2_inputs.lua
 end
 
 _G.KEEP.s = emu.add_machine_stop_notifier(function()

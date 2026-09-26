@@ -6,7 +6,7 @@ local COIN  = tonumber(os.getenv("COIN")  or "-1")
 local START = tonumber(os.getenv("START") or "-1")
 local n = 0
 local function press(f, on)
-  mac.ioport.ports[":IN2"].fields[f]:set_value(on and 0 or 1)
+  mac.ioport.ports[":IN2"].fields[f]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0)  -- nonzero = pressed; see tools/bk2_inputs.lua
 end
 _G.KEEP = {}
 _G.KEEP.n = emu.add_machine_frame_notifier(function()

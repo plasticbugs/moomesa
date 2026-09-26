@@ -22,7 +22,7 @@ local function note(k)
   first[k] = first[k] or {}
   if #first[k] < 12 and (#first[k] == 0 or frames - first[k][#first[k]] > 120) then first[k][#first[k] + 1] = frames end
 end
-local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value(on and 0 or 1) end
+local function press(port, field, on) mac.ioport.ports[port].fields[field]:set_value((on ~= (os.getenv("INPUTS_INVERTED") == "1")) and 1 or 0) end  -- nonzero = pressed; see tools/bk2_inputs.lua
 _G.KEEP = {}
 _G.KEEP.s = emu.add_machine_stop_notifier(function()
   local f = io.open(out, "w")

@@ -293,10 +293,39 @@ D from the K053251's CI2, CI3, CI4 bases (§7.6).
 4. Draw the first (back) layer with priority tag 1 — only if its priority is
    below CI1's (0x3F here, so always).
 5. Draw the second with tag 2.
-6. Draw the third with tag 4 (alpha only if K054338 CONTROL.MIXPRI, which the
-   game never sets — so never).
+6. Draw the third with tag 4.  MAME: blended at PBLEND level 1 while K054338
+   CONTROL.MIXPRI is set, and not drawn at all when that level is 0; the
+   driver calls this a stand-in ("DUMMY ... probably a control bit
+   somewhere").  **The board, and the core: per tile**, below.
 7. Draw every sprite, §7.4.
 8. Draw layer A on top of everything, tag 0.
+
+**Mixing per tile (the board's rule, not MAME's).** The two low bits of a
+tile's colour -- which MAME's `tile_callback` drops with `>> 2` -- are a mix
+code: 0 solid; 1, 2, 3 blended at the K054338 level `set_alpha_level(m)`
+reads (PBLEND word 13 low byte, word 14 high byte, word 14 low byte; 5 bits
+expanded to 8), and left out where that level is 0.  MIXPRI plays no part.
+Measured on the TAS (tools/bk2_inputs.lua), final boss:
+
+| frame | CONTROL | PBLEND | front layer (B) tiles by mix code |
+|---|---|---|---|
+| 54000, before | 01 | 00 | 2048 x 0 |
+| 55601, fog up | 03 | 1F | 512 x 0, 1536 x 1 (the fog) |
+| 55841-55870 | 03 | 1E .. 01, one a frame | the same |
+| 55871 on | 01 | 00 | the same |
+
+After 55871 the registers are those of ordinary play, so only the tiles can
+say the fog is gone: MAME, which ties blending to MIXPRI, draws it solid
+again and keeps it for the whole fight (reported against the arcade from the
+Pocket, and seen in MAME).  In ordinary play every tile's code is 0.  The
+same rule shows the ground in the intro's meteor scene (attract 1200, CONTROL
+03, PBLEND 00: 1344 tiles code 0, 704 code 1), which MAME's rule hides -- the
+"other things disappear" of MAME's own comment.  Over the 64 frozen states
+the rule differs from MAME on exactly those three frames; the gate holds them
+to the rule (`sim/states/*/*.board.png`, `MOO_MIX=board` in
+`tools/moo_render.py`) and the other 61 to MAME.  Still MAME's, unverified
+on the board: only the front layer is mixed, and PBLEND's additive bit is
+ignored.
 
 ### 7.4 Sprites (K053246 + K053247)
 
@@ -353,7 +382,9 @@ details is to be pinned by the reference renderer, not by reading.
 
 BG colour 0 (black). All nine shadow registers 0x1C0 = -64 (9-bit signed):
 every shadow preset subtracts 64 from R, G and B, clipped at 0 (CONTROL.CLIPSL
-clear). CONTROL = 0x01: video on, MIXPRI/SHDPRI/BRTPRI off. PBLEND 0.
+clear). CONTROL = 0x01 in ordinary play: video on, MIXPRI/SHDPRI/BRTPRI off,
+PBLEND 0.  (An early probe said the game never sets MIXPRI; it does, in the
+intro and for the final boss's fog -- §7.3.)
 Registers 0x16/0x18 (brightness) were written 0x00FF/0xFFFF once.
 
 MAME's shadow on a 32-bit bitmap is lossy: `shadow_table[rgb15]` — the
