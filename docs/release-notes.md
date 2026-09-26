@@ -21,7 +21,6 @@ card's root.
   that mark, as the arcade board does.
 - **The intro's meteor lands on visible ground**, which the same fix
   restores.
-- Busy scenes (the train stage) no longer draw sprites on every other line.
 
 ## Controls
 
