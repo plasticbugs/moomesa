@@ -140,3 +140,11 @@ that died belong here as much as the one that lived.
 - 2026-09-25, same bitstream: sprite shadows compared by eye with arcade
   footage on YouTube -- they match.  (No frozen state has a shadow in it; this
   is a visual check, not a pixel comparison.)
+- 2026-09-25, same bitstream, card reset to stock: moomesa.sav and
+  Settings/plasticbugs.moomesa/ deleted at the user's request.  Found there
+  first: Input/_core/input_persist.json held the FIRST build's mapping
+  (Jump id 200 -> button 5 = B, Shoot id 201 -> 4 = A).  A saved mapping
+  overrides input.json's defaults, so after the button swap the Pocket
+  probably went on routing the buttons the old way -- the likely cause of
+  "B should be shoot".  After changing button defaults, delete the core's
+  Settings/<core>/Input folder (or remap in Controls) before judging them.
