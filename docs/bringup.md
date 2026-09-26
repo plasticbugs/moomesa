@@ -137,3 +137,6 @@ that died belong here as much as the one that lived.
 - 2026-09-25, same bitstream: a service-menu setting changed, core quit and
   relaunched -- the setting persisted.  The save round trip (write, then
   load into bank 1 over the default) works on hardware.
+- 2026-09-25, same bitstream: sprite shadows compared by eye with arcade
+  footage on YouTube -- they match.  (No frozen state has a shadow in it; this
+  is a visual check, not a pixel comparison.)

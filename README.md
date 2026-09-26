@@ -75,8 +75,10 @@ defaults.
 
 Not proven:
 - long play: later stages and bosses have not been compared with MAME;
-- sprite shadows and mirroring (never seen in 20 minutes of MAME census), the
-  protection DMA with a non-zero length (never triggered);
+- sprite shadows pixel for pixel (no captured frame has one; on hardware
+  they match arcade footage by eye), sprite mirroring (never seen in 20
+  minutes of MAME census), the protection DMA with a non-zero length (never
+  triggered);
 - players 3 and 4 (wired from a docked Pocket's controllers, untested).
 
 Not modelled: flip screen.  Set in the game's service menu, it makes the
