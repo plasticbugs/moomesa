@@ -13,6 +13,16 @@ and copy `moomesa.rom` to `Assets/moomesa/common/` on the SD card. The image's
 md5 is `0ebb990422cb6b7c9c067b11450fd638`. Then unzip this package onto the
 card's root.
 
+## New in 0.2.0
+
+- **The final boss's fog now fades away and stays gone.** MAME, and this
+  core until now, faded it and then drew it solid again for the whole fight.
+  The game marks which tiles blend in each tile's colour; the core now reads
+  that mark, as the arcade board does.
+- **The intro's meteor lands on visible ground**, which the same fix
+  restores.
+- Busy scenes (the train stage) no longer draw sprites on every other line.
+
 ## Controls
 
 | Pocket | game |
@@ -35,14 +45,16 @@ defaults.
 
 ## Tested on hardware
 
-Boot and RAM/ROM check, attract mode, stage 1, stage 2 (the trains), sprite
-shadows (compared with arcade footage), and settings kept across launches.
+Boot and RAM/ROM check, attract mode and the intro, every stage through the
+final boss (its fog), sprite shadows (compared with arcade footage), and
+settings kept across launches.
 
 ## Known limits
 
 - Flip screen is not supported. If it is set in the service menu, the
   backgrounds disappear; set it back to off.
-- Later stages and bosses have not been compared with MAME.
+- Only the map screens and the final boss of the later stages are in the
+  frame-by-frame comparison with MAME so far.
 
 ## Credits
 

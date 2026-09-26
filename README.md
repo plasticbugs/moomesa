@@ -72,7 +72,8 @@ defaults.
   within about 10%, same band profile, starting in the same second;
 - three consecutive frames of a still screen identical (no OLED-marking
   alternation, `tools/check_frames.py`);
-- on hardware: the boot, stage 1, stage 2's train scene without the striped
+- on hardware: the final boss's fog fading and staying gone, and the
+  intro's ground, with the per-tile mixing rule; the boot, stage 1, stage 2's train scene without the striped
   sprites the first sprite engine gave it, and service-menu settings kept
   across launches (the save written to the card and read back).
 

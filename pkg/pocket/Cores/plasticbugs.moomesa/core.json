@@ -9,7 +9,7 @@
             "description": "Wild West C.O.W.-Boys of Moo Mesa (Konami, 1992) arcade core",
             "author": "plasticbugs",
             "url": "https://github.com/plasticbugs/moomesa",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "date_release": "2026-09-25"
         },
         "framework": {

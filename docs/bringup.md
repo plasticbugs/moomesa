@@ -161,3 +161,7 @@ that died belong here as much as the one that lived.
   7974346f29057c1a1b30df40c9479c3f (compile 18) has the per-tile rule.
   Quick check on hardware: the attract intro's meteor should land on visible
   ground (artifacts/fog/intro_1200_*).
+- 2026-09-25, bitstream 7974346f29057c1a1b30df40c9479c3f on hardware:
+  "It's perfect."  The final boss's fog fades and stays gone; the intro's
+  meteor lands on visible ground.  The per-tile mixing rule confirmed on the
+  Pocket against the arcade's behaviour.
