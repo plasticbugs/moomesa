@@ -69,11 +69,10 @@ defaults.
   within about 10%, same band profile, starting in the same second;
 - three consecutive frames of a still screen identical (no OLED-marking
   alternation, `tools/check_frames.py`);
-- on hardware: the boot, stage 1, the save file written to the card.
+- on hardware: the boot, stage 1, stage 2's train scene without the striped
+  sprites the first sprite engine gave it, the save file written to the card.
 
 Not proven:
-- the stage 2 train scene after the sprite engine rework -- it striped
-  sprites on alternate lines before; the rework is on hardware for testing;
 - long play: later stages and bosses have not been compared with MAME;
 - sprite shadows and mirroring (never seen in 20 minutes of MAME census), the
   protection DMA with a non-zero length (never triggered);

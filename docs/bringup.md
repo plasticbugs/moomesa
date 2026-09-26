@@ -130,3 +130,7 @@ that died belong here as much as the one that lived.
   queued sprite engine and the button swap.  On the card.  Expected: no
   striped sprites on the trains; square 32 (sprite line missed) 0 -- if 1
   and nothing visibly wrong, the abandoned tail held only far sprites.
+- 2026-09-25, bitstream a65555687d0fce880c9a219bcde4f3fc: stage 2 (trains)
+  clean -- no striped sprites.  The queued sprite engine fixed the overrun
+  seen on hardware.  Package without the bring-up menu entries copied (same
+  bitstream).
