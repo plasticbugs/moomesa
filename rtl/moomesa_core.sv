@@ -348,20 +348,35 @@ module moomesa_core (
     assign s_d    = p_busy ? p_d    : cpu_do;
 
     // ------------------------------------------------ EEPROM
-    (* ramstyle = "no_rw_check" *) logic [7:0] eep [128];
+    // Two banks.  Bank 0 is the default contents, which come with the ROM
+    // image at 0xD40000; bank 1 is what the save slot loaded.  The game runs
+    // on bank 1 only if the save held something: on a first launch the Pocket
+    // creates the file blank and loads it, and an all-0xFF EEPROM makes the
+    // game flip the screen, report ROM W2 BAD and stop on its check page (all
+    // zeros: the same stop, unflipped) -- measured in MAME.  Two banks also
+    // leave the order the Pocket loads the two slots in without effect.
+    (* ramstyle = "no_rw_check" *) logic [7:0] eep [256];
     logic [6:0] e_addr;
     logic [7:0] e_din, e_q;
     logic       e_we;
     logic       e_dump;
-    // the default contents come with the ROM image, at 0xD40000
+    // not reset: the load happens under reset.  Zero from configuration.
+    logic       nv_not_ff, nv_not_00;
+    initial begin nv_not_ff = 1'b0; nv_not_00 = 1'b0; end
+    wire        use_save  = nv_not_ff && nv_not_00;
+    always @(posedge clk) if (nv_we) begin      // not always_ff: the initial
+        if (nv_din != 8'hFF) nv_not_ff <= 1'b1;
+        if (nv_din != 8'h00) nv_not_00 <= 1'b1;
+    end
     wire dl_eep = dl_we && (dl_addr[24:7] == 18'h1A800);
     always_ff @(posedge clk) begin
-        if (e_we) eep[e_addr] <= e_din;
-        e_q <= eep[e_addr];
+        if (e_we) eep[{use_save, e_addr}] <= e_din;
+        e_q <= eep[{use_save, e_addr}];
     end
-    // second port: the download's default contents, the save slot's load
-    // and its unload -- one address, so it stays a block RAM port
-    wire [6:0] eb_addr = dl_eep ? dl_addr[6:0] : nv_addr;
+    // second port: the download's default contents (bank 0), the save slot's
+    // load (bank 1) and its unload (the bank in use) -- one address, so it
+    // stays a block RAM port
+    wire [7:0] eb_addr = dl_eep ? {1'b0, dl_addr[6:0]} : {nv_we || use_save, nv_addr};
     always_ff @(posedge clk) begin
         if (dl_eep || nv_we) eep[eb_addr] <= dl_eep ? dl_data : nv_din;
         nv_dout <= eep[eb_addr];

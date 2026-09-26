@@ -61,15 +61,15 @@ top). Green is 1. Read each row from the end where row 0 shows `1010 1010`.
 | 0 | 22 | core in reset | 0 |
 | 0 | 23 | CPU halted | 0 |
 | 0 | 24 | watchdog has fired | 0 (expected 1 after the menu has been open a while) |
-| 0 | 25 | IRQ5 (object-DMA end) has been taken | 1 once the game runs |
-| 0 | 26 | IRQ4 (vblank) has been taken | 1 once the game runs |
+| 0 | 25 | IRQ5 (vblank) has been taken | 1 within a second |
+| 0 | 26 | IRQ4 (after an object DMA) has been taken | 1 once the boot checks end, about 7 s in |
 | 0 | 27 | (unused) | 0 |
 | 0 | 28 | the K054539 missed a sample | 0 |
 | 0 | 29 | (unused) | 0 |
 | 0 | 30 | the game programmed a video mode the core does not model | 0 |
 | 0 | 31 | a tilemap line was not finished in time | 0 |
 | 0 | 32 | a sprite line was not finished in time | 0 |
-| 1 | 1–8, 9–32 | first fault: vector, then the code address before it | all 0 |
+| 1 | 1–8, 9–32 | first fault: vector, then the code address before it | all 0, or `08` / `04A392`: the boot ROM checksum reading address 8, which a healthy boot records too |
 | 2 | 1–16, 17–24, 25–32 | first program ROM word, first sound ROM byte, first graphics byte | `0000 0000 0001 1000` (0018), `1110 1101` (ED), then any |
 | 3 | 1–16, 17–32 | SRAM self-test | `1010 0101 0101 1010`, `0101 1010 1010 0101` |
 
@@ -85,6 +85,7 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 | garbled picture | ask for the service-mode test pattern first; section 5.18 |
 | glitches only while playing, gone in the menu | something the CPU shares with the video; section 5.17 |
 | menu restarts the game | `pause` has reached a reset; section 5.5 |
+| black, IRQ5 1, IRQ4 0, unsupported video mode 1 | the EEPROM: the game has flipped the screen, which the core does not draw, and stopped on ROM W2 BAD.  A blank save (all 0xFF) does this |
 
 ## Log
 
@@ -96,3 +97,11 @@ that died belong here as much as the one that lived.
   worst corner; no ignored constraints in moomesa_pocket.sdc; run_mem pass
   at holds 1/4/7; run_system to character select; check_frames pass;
   check_json pass.
+- 2026-09-25, same bitstream, first flash: black after the load.  Panel:
+  platform healthy, CPU running, IRQ5 1, IRQ4 0, unsupported video mode 1,
+  first fault 08 @ 04A392, rows 2 and 3 correct.  The fault is the ROM
+  checksum (the RTL bench records the same).  MAME with an all-0xFF EEPROM
+  flips the screen, prints ROM W2 BAD and stops on the check page -- which
+  the core reports as unsupported and leaves black, and which never reaches
+  IRQ4.  Cause: the Pocket created the nonvolatile save blank and loaded it
+  over the default EEPROM.  Rules out the SDRAM path, the PLL and the load.

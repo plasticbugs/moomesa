@@ -25,6 +25,11 @@ module tb_system_top (
     input  logic [24:0] dl_addr,
     input  logic  [7:0] dl_data,
 
+    // the save slot, as core_top's data_io hands it to the core
+    input  logic  [6:0] nv_addr,
+    input  logic        nv_we,
+    input  logic  [7:0] nv_din,
+
     input  logic  [7:0] p1, p2, p3, p4, in0,
     input  logic        test_n,
     input  logic  [3:0] dsw,
@@ -99,7 +104,7 @@ module tb_system_top (
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .spr_req(spr_req), .spr_addr(spr_addr), .spr_ack(spr_ack), .spr_q(spr_q),
         .dl_we(dl_we), .dl_addr(dl_addr), .dl_data(dl_data),
-        .nv_addr(7'd0), .nv_we(1'b0), .nv_din(8'd0), .nv_dout(), .nv_changed(),
+        .nv_addr(nv_addr), .nv_we(nv_we), .nv_din(nv_din), .nv_dout(), .nv_changed(),
         .p1(p1), .p2(p2), .p3(p3), .p4(p4), .in0(in0), .test_n(test_n), .dsw(dsw),
         .rgb(rgb), .hsync(hsync), .vsync(vsync), .hblank(hblank), .vblank(vblank),
         .pix_ce(pix_ce), .de(de), .snd_l(snd_l), .snd_r(snd_r),

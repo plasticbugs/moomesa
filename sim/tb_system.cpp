@@ -30,7 +30,8 @@ static void write_png(const std::string &path, const std::vector<uint8_t> &rgb);
 int main(int argc, char **argv) {
     Verilated::commandArgs(argc, argv);
     int frames = 10, gap = 8, hold = 4, coin = 600, start = 700, play = 1000;
-    std::string rom, out = ".", wavp;
+    std::string rom, out = ".", wavp, save;
+    bool save_first = false;
     std::vector<int16_t> wav;
     unsigned long long run_clk = 0;
     std::set<int> snaps;
@@ -42,6 +43,8 @@ int main(int argc, char **argv) {
         else if (a == "-o") out = next();
         else if (a == "-coin") coin = atoi(next().c_str());
         else if (a == "-wav") wavp = next();
+        else if (a == "-save") save = next();          // ff, 00 or a 128-byte file
+        else if (a == "-save_first") save_first = true;
         else if (a == "-start") start = atoi(next().c_str());
         else if (a == "-play") play = atoi(next().c_str());
         else if (a == "-snap") {
@@ -76,12 +79,32 @@ int main(int argc, char **argv) {
     long t = 0; while (!dut->mem_ready && t++ < 200000) tick();
     if (!dut->mem_ready) { printf("FAIL  the memory never came ready\n"); return 1; }
 
+    // the save slot, loaded under reset like the ROM; the Pocket's order of
+    // the two is not known, so either can go first
+    auto load_save = [&] {
+        if (save.empty()) return;
+        std::vector<uint8_t> nv(128, save == "00" ? 0x00 : 0xff);
+        if (save != "ff" && save != "00") {
+            FILE *f = fopen(save.c_str(), "rb");
+            if (!f || fread(nv.data(), 1, 128, f) != 128) { fprintf(stderr, "cannot read 128 bytes from %s\n", save.c_str()); exit(2); }
+            fclose(f);
+        }
+        for (int a = 0; a < 128; a++) {
+            dut->nv_addr = a; dut->nv_din = nv[a]; dut->nv_we = 1;
+            for (int i = 0; i < hold; i++) tick();
+            dut->nv_we = 0;
+            for (int i = hold; i < gap; i++) tick();
+        }
+    };
+    dut->nv_we = 0;
+    if (save_first) load_save();
     for (uint32_t a = 0; a < IMG; a++) {
         dut->dl_addr = a; dut->dl_data = image[a]; dut->dl_we = 1;
         for (int i = 0; i < hold; i++) tick();
         dut->dl_we = 0;
         for (int i = hold; i < gap; i++) tick();
     }
+    if (!save_first) load_save();
     for (int i = 0; i < 400; i++) tick();
     dut->reset = 0;
 
