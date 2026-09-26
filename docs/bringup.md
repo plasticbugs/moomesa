@@ -105,3 +105,8 @@ that died belong here as much as the one that lived.
   the core reports as unsupported and leaves black, and which never reaches
   IRQ4.  Cause: the Pocket created the nonvolatile save blank and loaded it
   over the default EEPROM.  Rules out the SDRAM path, the PLL and the load.
+- 2026-09-25, bitstream md5 0905d92371cf096c8d9bca5739d50c5d (compile 15,
+  commit 1f3e0ea): on the card.  Saves/moomesa/common/moomesa.sav read
+  from the card: 128 bytes of 0xFF, as diagnosed.  Left in place: the core
+  now ignores a blank save.  Expected: check page all OK (ROM W2 0027),
+  then attract; IRQ4 1 by about 7 s, unsupported 0.
