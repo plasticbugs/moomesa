@@ -62,9 +62,9 @@ module clk_enables (
     // pulse registered just before a pause still fires; the frozen divider
     // then makes no more, so the count-to-pulse rule above holds.
     wire run = !pause;
-    wire [2:0] d6  = 3'(div % 6);
-    wire [3:0] d12 = 4'(div % 12);
-    wire [4:0] d24 = 5'(div % 24);
+    wire [2:0] d6  = 3'(div % 6'd6);
+    wire [3:0] d12 = 4'(div % 6'd12);
+    wire [4:0] d24 = 5'(div % 6'd24);
     always_ff @(posedge clk) begin
         cen_phi1 <= run && (d6 == 3'd5);                    // 96 / 6 = 16 MHz
         cen_phi2 <= run && (d6 == 3'd2);

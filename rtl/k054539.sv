@@ -232,7 +232,7 @@ module k054539 (
         case (ps)
             P_IDLE: begin
                 if (z_rd_pend && z_rd_rom && !zr_done) begin
-                    rom_addr <= 21'({romsel, 17'd0} + {4'd0, cur_ptr - 17'd1});
+                    rom_addr <= 21'({romsel, 17'd0} + {8'd0, cur_ptr - 17'd1});
                     rom_req <= 1'b1; ps <= P_ZROM;
                 end else if (z_rd_pend && !zr_done) ps <= P_ZRAM;
                 else if (tick && !r22f[0]) tick <= 1'b0;
@@ -290,7 +290,7 @@ module k054539 (
                 su_vol  <= cr[3];
                 su_bval <= (9'(cr[3]) + 9'(cr[4]) > 9'd255) ? 8'd255 : 8'(cr[3] + cr[4]);
                 su_pan  <= panidx(cr[5]);
-                rd = 14'(({cr[7], cr[6]} >> 3) + {1'b0, rvpos});
+                rd = 14'(({cr[7], cr[6]} >> 3) + {3'd0, rvpos});
                 widx <= 13'(rd + {1'b0, rvpos});
                 typ <= cr[11][3:2];
                 lpf <= cr[12][0];
