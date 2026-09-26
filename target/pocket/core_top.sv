@@ -848,13 +848,14 @@ module core_top
     //! Controls (docs/hardware.md 3), active low as the board reads them.
     //! P1..P4: bit 0 left, 1 right, 2 up, 3 down, 4 button 1 (shoot),
     //! 5 button 2 (jump), 6 unused (high), 7 start.  IN0: bits 0-3 coin 1-4,
-    //! 4-7 service 1-4.  A and Y are both button 1, B and X both button 2, so
-    //! either thumb position works; select inserts that player's coin.
+    //! 4-7 service 1-4.  B and X are both button 1 (shoot), A and Y both
+    //! button 2 (jump), so either thumb position works -- the other way round
+    //! felt wrong on the Pocket; select inserts that player's coin.
     //! Players 1 and 2 come through the gamepad helper; 3 and 4 (a docked
     //! Pocket's third and fourth controllers) straight from cont3/cont4_key,
     //! brought into clk_sys here.
-    wire p1_b1 = p1_btn_a | p1_btn_y, p1_b2 = p1_btn_b | p1_btn_x;
-    wire p2_b1 = p2_btn_a | p2_btn_y, p2_b2 = p2_btn_b | p2_btn_x;
+    wire p1_b1 = p1_btn_b | p1_btn_x, p1_b2 = p1_btn_a | p1_btn_y;
+    wire p2_b1 = p2_btn_b | p2_btn_x, p2_b2 = p2_btn_a | p2_btn_y;
     wire svc   = mod_sw1[0] | svc_sw;
     // cont_key: 0 up, 1 down, 2 left, 3 right, 4 A, 5 B, 6 X, 7 Y, 14 select, 15 start
     logic [15:0] c3_s1, c3_s2, c4_s1, c4_s2;
@@ -869,9 +870,9 @@ module core_top
                            p1_right | j1_right, p1_left | j1_left);
     wire [7:0] g_p2 = kpad(p2_start, p2_b2, p2_b1, p2_down | j2_down, p2_up | j2_up,
                            p2_right | j2_right, p2_left | j2_left);
-    wire [7:0] g_p3 = kpad(c3_s2[15], c3_s2[5] | c3_s2[6], c3_s2[4] | c3_s2[7],
+    wire [7:0] g_p3 = kpad(c3_s2[15], c3_s2[4] | c3_s2[7], c3_s2[5] | c3_s2[6],
                            c3_s2[1], c3_s2[0], c3_s2[3], c3_s2[2]);
-    wire [7:0] g_p4 = kpad(c4_s2[15], c4_s2[5] | c4_s2[6], c4_s2[4] | c4_s2[7],
+    wire [7:0] g_p4 = kpad(c4_s2[15], c4_s2[4] | c4_s2[7], c4_s2[5] | c4_s2[6],
                            c4_s2[1], c4_s2[0], c4_s2[3], c4_s2[2]);
     wire [7:0] g_in0 = ~{4'b0000, c4_s2[14], c3_s2[14], p2_select, p1_select};
     wire       g_test_n = !svc;

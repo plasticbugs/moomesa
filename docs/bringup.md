@@ -41,7 +41,7 @@ other number names a ROM region that arrived wrong:
     ROM T5 OK C5AD     ROM T6 OK 5689
 
 Then the attract mode: the Konami logo, the story, the title, demo play.
-Select inserts a coin, start starts; A or Y shoots, B or X jumps.
+Select inserts a coin, start starts; B or X shoots, A or Y jumps.
 
 ## The panel
 
