@@ -86,7 +86,7 @@ build line N+1 while line N is shown; both must finish inside 6144.
 | stage | budget | estimate | ideal-memory bench | real-memory bench | hardware |
 |---|---|---|---|---|---|
 | tile fetch, 4 layers x 49 rows x ~14 clocks | 6144 | ~2750 | worst 2462 (lat 14); 5849 at lat 50 | | no fault seen |
-| sprite line, worst of 47 states | 6144 | ~1500 (100 cell rows) | 3083 old engine, 2157 queued engine (lat 14) | row fetch mean 20, worst 42 clocks (attract) | old engine: every other line lost on stage 2 (trains) |
+| sprite line, worst of 47 states | 6144 | ~1500 (100 cell rows) | 3083 old engine, 2157 queued engine (lat 14) | to frame 1620 (stage 1): old engine 2107, queued 1474; row fetch mean 20-21, worst 81-85 clocks | old engine: every other line lost on stage 2 (trains); queued engine: clean |
 | 68000 cache misses | shares the above | | | | |
 | vblank: DMA + sort (256 entries, O(n^2)) | 40 lines = 245 760 | ~100 000 | | | |
 
