@@ -142,7 +142,9 @@ int main(int argc, char **argv) {
                 printf("frame %d: %d pixels\n", frame_no, px);
             }
             if (frame_no % 60 == 0)
-                fprintf(stderr, "frame %d  status %02x  68000 cache misses %u\n", frame_no, status, dut->mrom_misses);
+                fprintf(stderr, "frame %d  status %02x  68000 cache misses %u  sprite line worst %u  row fetch worst %u mean %.1f\n",
+                        frame_no, status, dut->mrom_misses, dut->spr_worst, dut->spr_lat_worst,
+                        dut->spr_fetches ? double(dut->spr_lat_sum) / dut->spr_fetches : 0.0);
             frame_no++; px = 0;
             std::fill(frame.begin(), frame.end(), 0);
         }

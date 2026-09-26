@@ -40,6 +40,10 @@ module tb_system_top (
     output logic        dbg_halted, watchdog_reset,
     output logic  [7:0] dbg_status,
     output logic [15:0] mrom_misses,
+    // the sprite engine's budget, measured through the real memory glue
+    output logic [15:0] spr_worst,      // most clocks a line took
+    output logic [15:0] spr_lat_worst,  // longest wait for one ROM row
+    output logic [31:0] spr_lat_sum, spr_fetches,
     output logic        mem_ready
 );
     logic        mrom_req, mrom_ack;  logic [19:1] mrom_addr;  logic [15:0] mrom_q;
@@ -112,6 +116,19 @@ module tb_system_top (
         .watchdog_reset(watchdog_reset),
         .dbg_status(dbg_status), .dbg_snd_worst(), .dbg_snd_reads()
     );
+
+    assign spr_worst = u_core.u_video.u_spr.worst_line;
+    logic [15:0] lat_n;
+    always_ff @(posedge clk) begin
+        if (spr_req && !spr_ack) lat_n <= lat_n + 16'd1;
+        if (spr_ack) begin
+            spr_fetches <= spr_fetches + 32'd1;
+            spr_lat_sum <= spr_lat_sum + 32'(lat_n) + 32'd1;
+            if (lat_n + 16'd1 > spr_lat_worst) spr_lat_worst <= lat_n + 16'd1;
+            lat_n <= 16'd0;
+        end
+        if (reset) begin lat_n <= 0; spr_fetches <= 0; spr_lat_sum <= 0; spr_lat_worst <= 0; end
+    end
 
     // The hardware's own first-fault capture, run here so it is proven quiet
     // on a healthy boot before it is trusted on a sick one, and so a bench

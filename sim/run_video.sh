@@ -4,7 +4,7 @@
 # pixels on every state, or it fails.  Every change to RTL that draws pixels
 # goes through this before it is committed (CLAUDE.md).
 #
-#   sim/run_video.sh moomesa.rom [state ...] [-lat N]
+#   sim/run_video.sh moomesa.rom [state ...] [-lat N] [-slat N]
 #
 # The RTL's frames land in artifacts/rtl/ as PNGs.
 set -e
@@ -13,8 +13,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 cd "$here"
 rom=$1; shift
-[ -f "$rom" ] || { echo "usage: sim/run_video.sh moomesa.rom [state ...] [-lat N]" >&2; exit 2; }
 case "$rom" in /*) ;; *) rom="$caller/$rom";; esac
+[ -f "$rom" ] || { echo "usage: sim/run_video.sh moomesa.rom [state ...] [-lat N] [-slat N]" >&2; exit 2; }
 verilator --cc --exe --build -j "${JOBS:-8}" -O2 \
     -Wall -Wno-DECLFILENAME -Wno-UNUSEDSIGNAL -Wno-UNUSEDPARAM -Wno-PINCONNECTEMPTY \
     -Wno-BLKSEQ -Wno-WIDTHTRUNC -Wno-WIDTHEXPAND \
@@ -27,6 +27,7 @@ states=""
 while [ $# -gt 0 ]; do
     case "$1" in
         -lat) extra="$extra -lat $2"; shift 2;;
+        -slat) extra="$extra -slat $2"; shift 2;;
         -perturb) extra="$extra -perturb"; shift;;
         /*) states="$states $1"; shift;;
         *) states="$states $caller/$1"; shift;;

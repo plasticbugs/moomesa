@@ -85,10 +85,19 @@ build line N+1 while line N is shown; both must finish inside 6144.
 
 | stage | budget | estimate | ideal-memory bench | real-memory bench | hardware |
 |---|---|---|---|---|---|
-| tile fetch, 4 layers x 49 rows x ~14 clocks | 6144 | ~2750 | | | |
-| sprite cells, measured worst 65 sprites | 6144 | ~1500 (100 cell rows) | | | |
+| tile fetch, 4 layers x 49 rows x ~14 clocks | 6144 | ~2750 | worst 2462 (lat 14); 5849 at lat 50 | | no fault seen |
+| sprite line, worst of 47 states | 6144 | ~1500 (100 cell rows) | 3083 old engine, 2157 queued engine (lat 14) | row fetch mean 20, worst 42 clocks (attract) | old engine: every other line lost on stage 2 (trains) |
 | 68000 cache misses | shares the above | | | | |
 | vblank: DMA + sort (256 entries, O(n^2)) | 40 lines = 245 760 | ~100 000 | | | |
+
+The sprite line engine was first a single machine: per cell, set up, fetch,
+wait, draw.  A cell cost the sum, about 37 clocks at lat 14, and a line that
+overran made the engine drop the NEXT line's start -- every other line lost
+(reproduced on the bench with `-slat 120`: rows 163, 165 .. 183).  Now a
+front end fetches while a back end draws, through a 4-cell queue, so a cell
+costs about the larger of the two; an overrun abandons the late line and
+starts the next, so an overload drops the farthest sprites of that line only
+(`artifacts/sprite_overload/`).
 
 Every engine with a deadline latches a "missed" flag for the bring-up panel
 and a worst-case count that saturates (METHODOLOGY 5.19).

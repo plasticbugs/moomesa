@@ -110,3 +110,13 @@ that died belong here as much as the one that lived.
   from the card: 128 bytes of 0xFF, as diagnosed.  Left in place: the core
   now ignores a blank save.  Expected: check page all OK (ROM W2 0027),
   then attract; IRQ4 1 by about 7 s, unsupported 0.
+- 2026-09-25, bitstream 0905d923 (blank-save fix): boots and plays, "nearly
+  perfect".  Afterwards moomesa.sav on the card held real settings (0000 0300
+  0301 ...), not 0xFF: the save write path works on hardware.  Reported: on
+  stage 2 (trains), with a busy screen, sprites drawn on every other line
+  only.  Cause: the sprite line engine overran its 6144 clocks and dropped
+  the next line's start; reproduced on the video bench at -slat 120.
+- 2026-09-25, bitstream a65555687d0fce880c9a219bcde4f3fc (compile 17): the
+  queued sprite engine and the button swap.  On the card.  Expected: no
+  striped sprites on the trains; square 32 (sprite line missed) 0 -- if 1
+  and nothing visibly wrong, the abandoned tail held only far sprites.

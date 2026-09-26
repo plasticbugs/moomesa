@@ -9,6 +9,7 @@
 //
 // -lat   clocks from a ROM request to its answer (default 14: a 2-word
 //        burst on the Pocket's SDRAM with nothing in the way).
+// -slat  the same for the sprite port alone (default -lat + 2)
 #include "Vmoo_video.h"
 #include "verilated.h"
 #include <cstdio>
@@ -22,7 +23,7 @@ static Vmoo_video *dut;
 static uint64_t clk = 0;
 static int pixdiv = 0;
 static std::vector<uint8_t> rom;
-static int lat = 14;
+static int lat = 14, slat = -1;   // -slat: the sprite port's alone
 static int t_cnt = -1, s_cnt = -1;
 static long t_busy_run = 0, t_busy_worst = 0;
 
@@ -42,7 +43,7 @@ static void tick() {
     } else t_cnt = -1;
     if (t_cnt == -2 && !dut->tile_ack) {}
     if (dut->spr_req) {
-        if (s_cnt < 0) s_cnt = lat + 2;
+        if (s_cnt < 0) s_cnt = (slat >= 0 ? slat : lat + 2);
         else if (--s_cnt == 0) { dut->spr_ack = 1; dut->spr_q = be64(SPR_B + dut->spr_addr * 8); s_cnt = -2; }
     } else s_cnt = -1;
     dut->clk = 1; dut->eval();
@@ -123,6 +124,7 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-lat" && i + 1 < argc) lat = atoi(argv[++i]);
+        if (a == "-slat" && i + 1 < argc) slat = atoi(argv[++i]);
         else if (a == "-png" && i + 1 < argc) png = argv[++i];
         else if (a == "-perturb") perturb = true;   // negative control: the gate must fail
         else if (a[0] == '+') continue;

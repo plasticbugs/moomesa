@@ -22,12 +22,25 @@
 //
 // The line buffer is two block RAMs.  Flags {claimed, shadowed, shadow preset,
 // shadow class}: the engine reads a pixel's a clock before it writes it
-// (forwarding the write before when it is the same pixel), so a pixel still
-// goes in every clock.  Data {claimed, palette index[10:0], class[1:0],
+// (forwarding either of the two writes before when it is the same pixel), so
+// a pixel still goes in every clock.  Data {claimed, palette index[10:0], class[1:0],
 // shadowed, preset[1:0], class[1:0]}: written whole by the engine from the
 // flags, read by the mixer.  (Flags as flops -- four 512-bit arrays behind
 // 512-way decodes -- came to 9,100 ALMs, half the device: METHODOLOGY 5.18.)
-// The engine clears its half at the start of each line, 384 clocks.
+// The engine clears its half at the start of each line, 384 clocks, while it
+// starts on the list: nothing is drawn until the clear is done.
+//
+// The line engine is two machines and a queue.  The front end walks the
+// sorted list, decides which cell rows cross the line, fetches each one and
+// queues it with its geometry; the back end draws queued cells a pixel a
+// clock.  So a cell costs about the longer of its fetch and its pixels, not
+// their sum, and the list walk hides behind the drawing (on the Pocket the
+// fetch waits its turn at the burst port behind the tiles and both CPUs).
+//
+// A line not finished when the next one starts is abandoned at the first
+// point with no fetch in flight, and the new line started: an overloaded line
+// loses its farthest sprites -- drawing is nearest first -- instead of the
+// next line losing all of them (which showed as every other line missing).
 //   class: which sorted layers hide it (0: none .. 3: all three)
 //
 // Deviation from MAME, on a path the game was never seen to use (no shadow in
@@ -252,7 +265,7 @@ module moo_sprites (
     // ------------------------------------------------------------ line engine
     typedef enum logic [4:0] {
         E_IDLE, E_NEXT, E_S1, E_S2, E_L1, E_L2, E_Z1, E_G1, E_G2, E_V,
-        E_VC, E_R0, E_R1, E_RW, E_R2, E_R3, E_C0, E_CA, E_CM, E_C1, E_C2, E_PIX, E_NX, E_CLR
+        E_VC, E_R0, E_R1, E_RW, E_R2, E_R3, E_C0, E_CA, E_CM, E_C1, E_C2, E_PUSH, E_NX, E_DONE
     } est_t;
     est_t es;
     logic  [8:0] Y;
@@ -277,7 +290,6 @@ module moo_sprites (
     logic [11:0] zw;
     logic        fx;
     logic  [5:0] tx;
-    logic [20:0] dx;
     logic signed [33:0] acc, step;
     logic signed [16:0] pi, pi1;              // pixel index range within the cell
     logic [63:0] rowd;
@@ -286,6 +298,33 @@ module moo_sprites (
     logic        shd_on;
     logic  [1:0] preset;
     logic [15:0] cyc;
+    logic        clr_on;                      // clearing this line's half
+    logic  [8:0] clr_x;
+    logic        rs_pend;                     // a line started while busy
+    logic  [8:0] rs_line;
+    logic        rs_buf;
+    // where it is taken: anywhere but with a fetch in flight (and from idle,
+    // when the line ended on the clock the next one was asked for)
+    wire         restart = rs_pend && es != E_C1 && es != E_CM && es != E_C2;
+
+    // the queue between the front end and the back end: one cell each
+    localparam int QW = 64 + 34 + 34 + 17 * 3 + 7 + 2 + 1 + 2;
+    logic [QW-1:0] q_mem [4];
+    logic  [1:0] q_wp, q_rp;
+    logic  [2:0] q_n;
+    logic        q_push, q_pop;
+    wire         q_full  = (q_n == 3'd4);
+    wire         q_empty = (q_n == 3'd0);
+    wire [QW-1:0] q_head = q_mem[q_rp];
+
+    // the back end: the cell being drawn
+    logic        b_on;
+    logic [63:0] b_rowd;
+    logic signed [33:0] b_acc, b_step;
+    logic signed [16:0] b_sx, b_pi, b_pi1;
+    logic  [6:0] b_pbase;
+    logic  [1:0] b_cls, b_pre;
+    logic        b_shd;
 
     // line buffer (see the header)
     logic  [5:0] fl [1024];             // {c, s, pre[1:0], scls[1:0]}
@@ -298,11 +337,14 @@ module moo_sprites (
     logic        p1_v;
     logic  [9:0] p1_a;
     logic  [3:0] p1_pen;
-    logic  [8:0] clr_x;
-    // the last flags written, for a read that raced its write
-    logic        lw_v;
-    logic  [9:0] lw_a;
-    logic  [5:0] lw_d;
+    logic  [6:0] p1_pbase;
+    logic  [1:0] p1_cls, p1_pre;
+    logic        p1_shd;
+    // the last two flags written, for a read that raced its write: cells
+    // run back to back, so a pixel can land on one written two clocks before
+    logic        lw_v, lw2_v;
+    logic  [9:0] lw_a, lw2_a;
+    logic  [5:0] lw_d, lw2_d;
     always_ff @(posedge clk) begin
         if (f_we) begin fl[f_wa] <= f_wd; dl[f_wa] <= d_wd; end
         f_q <= fl[f_ra];
@@ -325,8 +367,8 @@ module moo_sprites (
     wire signed [16:0] offx = 17'($signed(16'({k246[0], k246[1]})));
     wire signed [16:0] offy = 17'($signed(16'({k246[2], k246[3]})));
     wire  [5:0] pri = w6[9:4];
-    wire  [3:0] pen = spen(rowd, 4'(acc >>> 16));
-    wire signed [16:0] X = sx + pi;
+    wire  [3:0] pen = spen(b_rowd, 4'(b_acc >>> 16));
+    wire signed [16:0] X = b_sx + b_pi;
     wire  [8:0] Xu = X[8:0];
     assign f_ra = {eb, Xu};
 
@@ -334,41 +376,75 @@ module moo_sprites (
     always_ff @(posedge clk) begin
         f_we <= 1'b0;
         lw_v <= 1'b0;
-        if (es == E_CLR) begin
+        lw2_v <= lw_v; lw2_a <= lw_a; lw2_d <= lw_d;
+        if (clr_on) begin
             f_we <= 1'b1; f_wa <= {eb, clr_x}; f_wd <= 6'd0; d_wd <= 19'd0;
         end else if (p1_v) begin
             logic [5:0] cur;
-            cur = (lw_v && lw_a == p1_a) ? lw_d : f_q;
-            if (p1_pen != 4'd15 || !shd_on) begin
+            cur = (lw_v && lw_a == p1_a) ? lw_d : (lw2_v && lw2_a == p1_a) ? lw2_d : f_q;
+            if (p1_pen != 4'd15 || !p1_shd) begin
                 if (!cur[5]) begin
                     f_we <= 1'b1; f_wa <= p1_a; f_wd <= {1'b1, cur[4:0]};
-                    d_wd <= {1'b1, {pbase, 4'b0000} + {7'd0, p1_pen}, cls, cur[4:0]};
+                    d_wd <= {1'b1, {p1_pbase, 4'b0000} + {7'd0, p1_pen}, p1_cls, cur[4:0]};
                     lw_v <= 1'b1; lw_a <= p1_a; lw_d <= {1'b1, cur[4:0]};
                 end
             end else if (!cur[5] && !cur[4]) begin
-                f_we <= 1'b1; f_wa <= p1_a; f_wd <= {2'b01, preset, cls};
-                d_wd <= {1'b0, 11'd0, 2'd0, 1'b1, preset, cls};
-                lw_v <= 1'b1; lw_a <= p1_a; lw_d <= {2'b01, preset, cls};
+                f_we <= 1'b1; f_wa <= p1_a; f_wd <= {2'b01, p1_pre, p1_cls};
+                d_wd <= {1'b0, 11'd0, 2'd0, 1'b1, p1_pre, p1_cls};
+                lw_v <= 1'b1; lw_a <= p1_a; lw_d <= {2'b01, p1_pre, p1_cls};
             end
         end
     end
 
+    // the queue
+    always_ff @(posedge clk) begin
+        if (q_push) begin
+            q_mem[q_wp] <= {rowd, acc, step, sx, pi, pi1, pbase, cls, shd_on, preset};
+            q_wp <= q_wp + 2'd1;
+        end
+        if (q_pop) q_rp <= q_rp + 2'd1;
+        q_n <= q_n + 3'(q_push) - 3'(q_pop);
+        if (rst || (es == E_IDLE && start) || restart) begin
+            q_wp <= 2'd0; q_rp <= 2'd0; q_n <= 3'd0;
+        end
+    end
+
+    // the back end: a pixel a clock, the next queued cell straight after
     always_ff @(posedge clk) begin
         p1_v <= 1'b0;
+        q_pop <= 1'b0;
+        if (b_on) begin
+            // stage 0: this pixel's flags are read this clock (f_ra)
+            p1_v <= (pen != 4'd0); p1_a <= {eb, Xu}; p1_pen <= pen;
+            p1_pbase <= b_pbase; p1_cls <= b_cls; p1_pre <= b_pre; p1_shd <= b_shd;
+            b_acc <= b_acc + b_step;
+            b_pi  <= b_pi + 17'sd1;
+        end
+        if ((!b_on || b_pi == b_pi1) && !q_empty && !q_pop && !clr_on) begin
+            {b_rowd, b_acc, b_step, b_sx, b_pi, b_pi1, b_pbase, b_cls, b_shd, b_pre} <= q_head;
+            b_on <= 1'b1; q_pop <= 1'b1;
+        end else if (b_on && b_pi == b_pi1) b_on <= 1'b0;
+        if (rst || (es == E_IDLE && start) || restart) begin
+            b_on <= 1'b0; q_pop <= 1'b0; p1_v <= 1'b0;
+        end
+    end
+
+    // the front end
+    always_ff @(posedge clk) begin
+        q_push <= 1'b0;
         if (es != E_IDLE && cyc != 16'hFFFF) cyc <= cyc + 16'd1;
+        if (clr_on) begin
+            clr_x <= clr_x + 9'd1;
+            if (clr_x == 9'd423) clr_on <= 1'b0;
+        end
         case (es)
             E_IDLE: if (start) begin
                 Y <= line; eb <= buf_sel; ei <= 9'd0; cyc <= 16'd0;
-                clr_x <= 9'd40;
-                es <= E_CLR;
-            end
-            E_CLR: begin
-                // clear this half, x 40..423 (the write is in stage 1's block)
-                clr_x <= clr_x + 9'd1;
-                if (clr_x == 9'd423) es <= E_NEXT;
+                clr_x <= 9'd40; clr_on <= 1'b1;
+                es <= E_NEXT;
             end
             E_NEXT: begin
-                if (ei >= n_act) es <= E_IDLE;
+                if (ei >= n_act) es <= E_DONE;
                 else begin e_sraddr <= 8'(n_act - 9'd1 - ei); es <= E_S1; end
             end
             E_S1: es <= E_S2;
@@ -500,18 +576,14 @@ module moo_sprites (
             end
             E_C2: begin
                 // r_q is dx; the fetch is in flight
-                dx <= r_q;
                 acc  <= 34'(pmul) * 34'(r_q);
                 step <= fx ? (34'sd0 - 34'(r_q)) : 34'(r_q);
-                if (rom_ack) begin rom_req <= 1'b0; rowd <= rom_q; es <= E_PIX; end
+                if (rom_ack) begin rom_req <= 1'b0; rowd <= rom_q; es <= E_PUSH; end
                 else es <= E_C2;
             end
-            E_PIX: begin
-                // stage 0: this pixel's flags are read this clock (f_ra)
-                p1_v <= (pen != 4'd0); p1_a <= {eb, Xu}; p1_pen <= pen;
-                acc <= acc + step;
-                pi  <= pi + 17'sd1;
-                if (pi == pi1) es <= E_R3;
+            E_PUSH: begin
+                // into the queue (the push is a clock behind: counted here)
+                if (!q_full && !(q_push && q_n == 3'd3)) begin q_push <= 1'b1; es <= E_R3; end
             end
             E_R3: begin
                 // next blit of this cell, or the next cell
@@ -523,11 +595,32 @@ module moo_sprites (
                 end
             end
             E_NX: begin ei <= ei + 9'd1; es <= E_NEXT; end
+            E_DONE: begin
+                // the list is walked; done when the back end has drawn the queue
+                if (!q_push && q_empty && !b_on && !q_pop && !clr_on) begin
+                    if (cyc > worst_line) worst_line <= cyc;
+                    es <= E_IDLE;
+                end
+            end
             default: es <= E_IDLE;
         endcase
-        if (start && es != E_IDLE) missed <= 1'b1;
-        if (es != E_IDLE && (es == E_NEXT && ei >= n_act) && cyc > worst_line) worst_line <= cyc;
-        if (rst) begin es <= E_IDLE; rom_req <= 1'b0; missed <= 1'b0; worst_line <= 16'd0; end
+        if (start && es != E_IDLE) begin
+            missed <= 1'b1;
+            rs_pend <= 1'b1; rs_line <= line; rs_buf <= buf_sel;
+        end
+        // an overrun: abandon this line where no fetch is in flight, and start
+        // the one that was asked for
+        if (restart) begin
+            rs_pend <= 1'b0; q_push <= 1'b0;
+            Y <= rs_line; eb <= rs_buf; ei <= 9'd0; cyc <= 16'd0;
+            clr_x <= 9'd40; clr_on <= 1'b1;
+            if (cyc > worst_line) worst_line <= cyc;
+            es <= E_NEXT;
+        end
+        if (rst) begin
+            es <= E_IDLE; rom_req <= 1'b0; missed <= 1'b0; worst_line <= 16'd0;
+            rs_pend <= 1'b0; clr_on <= 1'b0; q_push <= 1'b0;
+        end
     end
 
     // the mixer's read port
