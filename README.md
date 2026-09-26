@@ -14,21 +14,42 @@ DMA.  All of it is in the gateware; the machine is described in
 |---|---|---|
 | 68000 @ 16 MHz | fx68k (Jorge Cwik) | boots and runs the game's own RAM/ROM check on both benches |
 | Z80 @ 8 MHz | tv80 (Guy Hutchison) via `rtl/z80_cen.sv` | reports the sound ROM checksum MAME shows (151B) |
-| YM2151 | jt51 (Jose Tejada) | — (level against MAME not yet compared) |
+| YM2151 | jt51 (Jose Tejada) | only as part of the whole mix against MAME's recording (below) |
 | K054539 | `rtl/k054539.sv`, from MAME's model | `sim/check_k539.sh`: MAME's own code fed the same 40 s of commands, max difference 4 LSB, 68.8 dB |
 | K054156/7 tilemaps, K053246/7 sprites, K053251, K054338 | `rtl/moo_*.sv` | `sim/run_video.sh`: pixel-identical to MAME on 47 frozen states |
 | video semantics | `tools/moo_render.py` (Python model) | pixel-identical to MAME on the same 47 states |
 | ROM | Pocket SDRAM (`target/pocket/moomesa_mem.sv`) | `sim/run_mem.sh` at the loader's rate; `tools/verify_rom.py`: image byte-identical to MAME's regions |
 | every RAM | block RAM | — |
-| EEPROM (ER5911) | jt5911; default contents from the romset; saved to the SD card | — (save path untested) |
+| EEPROM (ER5911) | jt5911; default contents from the romset; saved to the SD card | written to the card on hardware; a blank save is ignored (`sim/run_system.sh -save ff`) |
 
 ## Status
 
-**Not yet run on a Pocket.** The build fits (48% of the ALMs, 260 of 308
-RAM blocks) and meets timing at every corner (worst setup slack +0.063 ns at
-96 MHz); every item on the pre-flash list in `docs/bringup.md` passes.
+**Runs on the Pocket**: boots, passes its RAM/ROM check, and plays through
+stage 1 and into stage 2.  The build fits (49% of the ALMs, 264 of 308 RAM
+blocks) and meets timing at every corner (worst setup slack +0.073 ns at
+96 MHz).  `docs/bringup.md` logs every hardware run.
 
-Proven, and by what:
+## Controls and menu
+
+| Pocket | game |
+|---|---|
+| D-pad | move |
+| B or X | shoot |
+| A or Y | jump |
+| Select | coin |
+| Start | start |
+
+Players 3 and 4 come from a docked Pocket's third and fourth controllers.
+The core menu has the board's DIP switches (sound output, coin slots,
+cabinet players), the screen shape, scanlines and shadow mask, and the
+service switch, which opens the game's own test and settings menu
+(difficulty, lives and so on).  Those settings live in the game's EEPROM and
+are saved to the SD card.  On a first launch the Pocket creates that save
+file blank; the core ignores a blank save and starts from the romset's
+defaults.
+
+## What is proven, and by what
+
 - the ROM image: identical to what MAME hands each chip (`tools/verify_rom.py`),
   and built identically by `tools/mra_build.py` and the standard `mra` tool;
 - the memory path: every region read back through the core's ports after a
@@ -37,6 +58,9 @@ Proven, and by what:
 - the video: 47 frozen states from boot, attract, the intro's alpha-blended
   fog, character select, play with up to 65 sprites, zoom, line scroll and
   service mode, 0 differing pixels in the Python model and in the RTL;
+- the sprite engine under overload: when a line cannot be finished in time
+  it loses its farthest sprites, never a whole line (`sim/run_video.sh
+  -slat N`; pictures in `artifacts/sprite_overload/`);
 - the K054539 against MAME's own code, sample by sample (max 4 LSB over 40 s);
 - the whole machine from reset: RAM/ROM check with MAME's checksums, title
   with the credit, character select, stage 1 (`sim/run_machine.sh`); on the
@@ -44,16 +68,20 @@ Proven, and by what:
 - its sound against MAME's recording with the same inputs: per-second level
   within about 10%, same band profile, starting in the same second;
 - three consecutive frames of a still screen identical (no OLED-marking
-  alternation, `tools/check_frames.py`).
+  alternation, `tools/check_frames.py`);
+- on hardware: the boot, stage 1, the save file written to the card.
 
 Not proven:
-- anything on hardware;
+- the stage 2 train scene after the sprite engine rework -- it striped
+  sprites on alternate lines before; the rework is on hardware for testing;
 - long play: later stages and bosses have not been compared with MAME;
 - sprite shadows and mirroring (never seen in 20 minutes of MAME census), the
-  protection DMA with a non-zero length (never triggered), flip screen (not
-  modelled -- flagged on the panel if the game asks for it);
-- the EEPROM save round trip (written to METHODOLOGY 5.24, untested);
+  protection DMA with a non-zero length (never triggered);
+- reading back a save the game wrote (the write is proven on hardware);
 - players 3 and 4 (wired from a docked Pocket's controllers, untested).
+
+Not modelled: flip screen.  Set in the game's service menu, it makes the
+tilemaps disappear (the panel's "unsupported video mode" square lights).
 
 Known differences from MAME: the object DMA takes real time (about 30 us)
 where MAME's is instant.  The interrupts follow MAME's order, which the game
@@ -90,11 +118,20 @@ sim/run_system.sh moomesa.rom -frames 450                     # the machine, rea
 
 ## Credits
 
-`CREDITS.md` is the full list.  The machine is written from MAME's `moo.cpp`
-(R. Belmont, Acho A. Tang, after Olivier Galibert) and its Konami device
-models; the CPUs are Jorge Cwik's fx68k and Guy Hutchison's tv80; the YM2151
-and EEPROM are Jose Tejada's jt51 and jt5911.  **Marcus Andrade**
-([@boogermann](https://github.com/boogermann), OpenGateware / Raetro) wrote
-everything between the arcade hardware and the Pocket (`platform/pocket/`, the
-project files, the `core_top` template, the Docker build image).  Analogue for
-the APF.
+`CREDITS.md` is the full list.
+
+- **MAME** -- the machine is written from `moo.cpp` (driver by R. Belmont and
+  Acho A. Tang, based on Olivier Galibert's `xexex.cpp`; protection
+  information from ElSemi and Olivier Galibert) and its Konami device models
+  by David Haywood, Olivier Galibert, Fabio Priuli, Acho A. Tang, R. Belmont
+  and Angelo Salese, with MAME's `drawgfx` (Nicola Salmoria, Aaron Giles) and
+  `tilemap` (Aaron Giles) for how each pixel is drawn.
+- **Jorge Cwik** -- fx68k, the 68000.
+- **Guy Hutchison** -- tv80, the Z80.
+- **Jose Tejada (jotego)** -- jt51 (the YM2151) and jt5911 (the EEPROM), and
+  the `jtcores` Moo Mesa schematics, a second source for the board's wiring.
+- **Marcus Andrade** ([@boogermann](https://github.com/boogermann),
+  OpenGateware / Raetro) -- everything between the arcade hardware and the
+  Pocket: `platform/pocket/`, the project files, the `core_top` template and
+  the Docker image the build runs in.
+- **Analogue** -- the Analogue Pocket Framework.

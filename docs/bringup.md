@@ -45,6 +45,16 @@ Select inserts a coin, start starts; B or X shoots, A or Y jumps.
 
 ## The panel
 
+The release menu no longer shows the bring-up switches; the RTL still honours
+them.  To read the panel, add these back to `interact.json` (all `check`,
+address `0xF2000000`, `defaultval` 0, `persist` false):
+
+| id | name | value | mask | 0 (absent) means |
+|---|---|---|---|---|
+| 90 | Bring-up: panel | `0x00000008` | `0xFFFFFFF7` | panel off |
+| 91 | SDRAM read late | `0x00000010` | `0xFFFFFFEF` | read late ON (the tested setting; the bit is inverted) |
+| 92 | SDRAM slow bursts | `0x00000020` | `0xFFFFFFDF` | full-speed bursts (the tested setting) |
+
 Menu → **Bring-up: panel**. Four rows of 32 squares along the bottom edge of
 the picture (the *right* edge if the picture is rotated 270, read bottom to
 top). Green is 1. Read each row from the end where row 0 shows `1010 1010`.
@@ -81,7 +91,7 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 |---|---|
 | black, counter running, row 2 right, watchdog 1 | the image in SDRAM — rerun `sim/run_mem.sh`; section 5.16 |
 | row 3 not the pattern | the SRAM port (the game keeps nothing there; only its self-test) |
-| row 2 wrong | **Bring-up: SDRAM** switches; then the PLL phase (SDC, section 5.20) |
+| row 2 wrong | the SDRAM switches (ids 91, 92 above); then the PLL phase (SDC, section 5.20) |
 | garbled picture | ask for the service-mode test pattern first; section 5.18 |
 | glitches only while playing, gone in the menu | something the CPU shares with the video; section 5.17 |
 | menu restarts the game | `pause` has reached a reset; section 5.5 |
