@@ -20,7 +20,7 @@ DMA.  All of it is in the gateware; the machine is described in
 | video semantics | `tools/moo_render.py` (Python model) | pixel-identical to MAME on the same 47 states |
 | ROM | Pocket SDRAM (`target/pocket/moomesa_mem.sv`) | `sim/run_mem.sh` at the loader's rate; `tools/verify_rom.py`: image byte-identical to MAME's regions |
 | every RAM | block RAM | — |
-| EEPROM (ER5911) | jt5911; default contents from the romset; saved to the SD card | written to the card on hardware; a blank save is ignored (`sim/run_system.sh -save ff`) |
+| EEPROM (ER5911) | jt5911; default contents from the romset; saved to the SD card | round trip on hardware (settings kept across launches); a blank save is ignored (`sim/run_system.sh -save ff`) |
 
 ## Status
 
@@ -70,13 +70,13 @@ defaults.
 - three consecutive frames of a still screen identical (no OLED-marking
   alternation, `tools/check_frames.py`);
 - on hardware: the boot, stage 1, stage 2's train scene without the striped
-  sprites the first sprite engine gave it, the save file written to the card.
+  sprites the first sprite engine gave it, and service-menu settings kept
+  across launches (the save written to the card and read back).
 
 Not proven:
 - long play: later stages and bosses have not been compared with MAME;
 - sprite shadows and mirroring (never seen in 20 minutes of MAME census), the
   protection DMA with a non-zero length (never triggered);
-- reading back a save the game wrote (the write is proven on hardware);
 - players 3 and 4 (wired from a docked Pocket's controllers, untested).
 
 Not modelled: flip screen.  Set in the game's service menu, it makes the

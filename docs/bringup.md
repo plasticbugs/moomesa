@@ -134,3 +134,6 @@ that died belong here as much as the one that lived.
   clean -- no striped sprites.  The queued sprite engine fixed the overrun
   seen on hardware.  Package without the bring-up menu entries copied (same
   bitstream).
+- 2026-09-25, same bitstream: a service-menu setting changed, core quit and
+  relaunched -- the setting persisted.  The save round trip (write, then
+  load into bank 1 over the default) works on hardware.
