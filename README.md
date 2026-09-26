@@ -64,7 +64,8 @@ defaults.
 - the K054539 against MAME's own code, sample by sample (max 4 LSB over 40 s);
 - the whole machine from reset: RAM/ROM check with MAME's checksums, title
   with the credit, character select, stage 1 (`sim/run_machine.sh`); on the
-  real memory glue through character select (`sim/run_system.sh`);
+  real memory glue into stage 1, 2400 frames, with the queued sprite engine
+  (`sim/run_system.sh`);
 - its sound against MAME's recording with the same inputs: per-second level
   within about 10%, same band profile, starting in the same second;
 - three consecutive frames of a still screen identical (no OLED-marking
