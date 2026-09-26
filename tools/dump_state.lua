@@ -9,6 +9,8 @@
 -- joystick walks right and fire is tapped, which reaches gameplay.
 -- CONTINUE=1 adds a credit and a start every 30 s (tools/census_sprites.lua
 -- does the same, so its frame numbers can be captured here).
+-- BOT=1 plays with tools/bot_inputs.lua instead, which reaches the map
+-- between stages (tools/bot_explore.lua finds the frames).
 -- SERVICE=1 holds the test switch from power-on (service mode), and
 -- SVC_STEP=n taps player 1's button 1 every n frames to walk its menus.
 --
@@ -125,6 +127,8 @@ _G.KEEP = {}
 local SERVICE = os.getenv("SERVICE") == "1"
 local CONTINUE = os.getenv("CONTINUE") == "1"
 local SVC_STEP = tonumber(os.getenv("SVC_STEP") or "0")
+-- BOT=1: tools/bot_inputs.lua drives the inputs instead (BOT_LIB: its path)
+local BOT = os.getenv("BOT") == "1" and dofile(os.getenv("BOT_LIB") or "tools/bot_inputs.lua") or nil
 
 _G.KEEP.s = emu.add_machine_stop_notifier(function()
   log:write(string.format("frames %d\n", frames))
@@ -139,6 +143,12 @@ end)
 _G.KEEP.n = emu.add_machine_frame_notifier(function()
   frames = frames + 1
   if not i246 then return end
+  if BOT then
+    BOT.apply(mac, frames, COIN, START)
+    if pending then finish() end
+    if want[frames] then dump(frames) end
+    return
+  end
   if SERVICE then
     press(":IN1", "Service Mode", frames < 400)
     if SVC_STEP > 0 and frames > 400 then press(":P1_P3", "P1 Button 1", (frames % SVC_STEP) < 4) end

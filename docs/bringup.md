@@ -148,3 +148,9 @@ that died belong here as much as the one that lived.
   probably went on routing the buttons the old way -- the likely cause of
   "B should be shoot".  After changing button defaults, delete the core's
   Settings/<core>/Input folder (or remap in Controls) before judging them.
+- 2026-09-25, same bitstream: on the map between stages only one trophy
+  showed, though several stages were cleared (all showed on the final map).
+  MAME, played by tools/bot_inputs.lua (three stages cleared: town, trains,
+  plant), shows the same: one trophy (Niagara Desert), flags elsewhere, not
+  blinking over the frames captured.  The RTL draws those six map frames
+  pixel-identical to MAME (sim/states/map).  The game's own behaviour.
