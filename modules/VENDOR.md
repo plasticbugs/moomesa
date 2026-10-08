@@ -13,6 +13,21 @@ under `modules/` for Quartus.
 | cpu-tv80 | Z80 core (Guy Hutchison); `rtl/core` only, less `tv80n.v` and the SD-card helpers | https://github.com/hutch31/tv80 | 66a131c38d05ef58b3d8c4f1507a72e6e4aa5d65 | MIT |
 | sound-jt51 | YM2151 (Jose Tejada) | https://github.com/jotego/jt51 | 985a573dcfc1ff135553a39f7eae21d18ba57cbe | GPL-3.0 |
 | eeprom-jteeprom | `jt5911`, ER5911 serial EEPROM (Jose Tejada); the 93C46 models removed | https://github.com/jotego/jteeprom | 9c68ce841f4ec560ca6f228c8af6301129fd95fa | GPL-3.0 |
+| `target/pocket/analogizer/` | RndMnkIII's Analogizer adapter module (`openFPGA_Pocket_Analogizer` 1.4) and the 14 files it instantiates, verbatim; `analogizer.qip` is ours | https://github.com/RndMnkIII/MiraxPocket, `src/fpga/analogizer/` | 9dfdd2b9bec79fe5ea10e154a0613a0c9d4fe37f | GPL-3.0-or-later (the host core's); `hq2x.sv`, `scandoubler_2.v`, `yc_out_legacy.sv` carry their own GPL headers |
+
+The Analogizer module lives under `target/pocket/` rather than `modules/`
+because it is the Pocket's cartridge port, not the machine, and so that
+`tools/gen_qip.sh` and the per-module lint do not sweep it in: `core.qip`
+includes its own `analogizer.qip`, and `sim/lint.sh` lints it behind
+`target/pocket/pocket_analogizer.sv` with a stand-in for its one VHDL file
+(`sim/ps2_keyboard_stub.v`).  The copy is from MiraxPocket, RndMnkIII's
+newest arcade core (2026-09); his main Analogizer repository's
+`analogizer/` folder is the older 1.2 and has no settings-file support.
+Left out: `scandoubler.v`, `scanlines.v`, `yc_out.sv`, `psPAD_top.v`,
+`psx_control.v`, `csync.v`, `sync_fix.v` (also defined inside the top file),
+`two_button_press_detector.v`, `uart_tx.v` and `sine_lut.mem` -- nothing
+instantiates them.  In this copy the SNAC module declares PS/2 mouse outputs
+that it does not yet drive; the wrapper leaves them unconnected.
 
 fx68k reads `microrom.mem` and `nanorom.mem` from the working directory; the
 simulation scripts link them into `sim/`.  tv80's `tv80s` wrapper ties the

@@ -29,7 +29,12 @@ So this checks the things the firmware cares about and a parser does not:
     32 lines -- where the on-screen keyboard is drawn -- cut off, and the
     whole image flickering;
   * the files are no larger than the largest this firmware is known to
-    accept, because size is the one limit that cannot be read off the file.
+    accept, because size is the one limit that cannot be read off the file;
+  * an Analogizer core's three settings agree (docs/analogizer.md): the
+    "analogizer.bin" slot at 0xF7000000, its parameters' platform index
+    (bits 25:24) pointing at "analogizer" in core.json's platform_ids, and
+    the cartridge port powered.  Any one missing and the Pocket loads the
+    core happily, never hands it the file, and the adapter stays dark.
 
 It exits non-zero and prints every fault, not just the first.
 """
@@ -195,6 +200,43 @@ def main(argv):
                     if not insts or not all(named):
                         fault(path, f'slot {i} is required but names no filename'
                                     + (' (and not every instance JSON names one)' if insts else ''))
+
+    # The Analogizer: the settings file is only ever read from the platform
+    # folder the slot's parameters name, so the slot, the platform id and the
+    # cartridge port have to agree across two files.
+    for core_dir in sorted(glob.glob(os.path.join(root, 'Cores', '*'))):
+        cj, dj = os.path.join(core_dir, 'core.json'), os.path.join(core_dir, 'data.json')
+        try:
+            core = json.load(open(cj))['core']
+            slots = json.load(open(dj))['data'].get('data_slots', [])
+        except Exception:
+            continue
+        ana = [s for s in slots if s.get('filename') == 'analogizer.bin'
+               or str(s.get('address', '')).lower() == '0xf7000000']
+        if not ana:
+            continue
+        ids = core.get('metadata', {}).get('platform_ids', [])
+        for s in ana:
+            if str(s.get('address', '')).lower() != '0xf7000000':
+                fault(dj, f'Analogizer slot at {s.get("address")}; the adapter '
+                          f'module reads its settings at 0xF7000000')
+            if s.get('filename') != 'analogizer.bin':
+                fault(dj, f'Analogizer slot names {s.get("filename")!r}, not '
+                          f'"analogizer.bin", the file the configurators write')
+            if s.get('required'):
+                fault(dj, 'Analogizer slot is required: a card without the '
+                          'file would refuse to load the core')
+            try:
+                idx = (int(str(s.get('parameters', '0')), 16) >> 24) & 3
+            except ValueError:
+                idx = 0
+            if idx >= len(ids) or ids[idx] != 'analogizer':
+                fault(dj, f'Analogizer slot parameters name platform index {idx}, '
+                          f'but core.json platform_ids is {ids}: the file would '
+                          f'be looked for in the wrong Assets folder')
+        if core.get('framework', {}).get('hardware', {}).get('cartridge_adapter') != 0:
+            fault(cj, 'Analogizer slot present but cartridge_adapter is not 0: '
+                      'the cartridge port is not powered')
 
     for f in bad:
         print('  ' + f)

@@ -97,6 +97,25 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 | menu restarts the game | `pause` has reached a reset; section 5.5 |
 | black, IRQ5 1, IRQ4 0, unsupported video mode 1 | the EEPROM: the game has flipped the screen, which the core does not draw, and stopped on ROM W2 BAD.  A blank save (all 0xFF) does this |
 
+## With an Analogizer
+
+Not yet run on hardware (docs/analogizer.md says what the bench proved).  The
+first person with an adapter, in this order -- each step's reading tells the
+next one where to look:
+
+1. **No `analogizer.bin` on the card.**  The core must play exactly as
+   without the adapter, Pocket screen and controls.  If it does not, the
+   cart port is not idle: stop there.
+2. **`analogizer.bin` with enable on, RGBS, SNAC none, Pocket screen on.**
+   Expected: the same picture on the Pocket and on the CRT, 15.625 kHz /
+   59.19 Hz (a PVM's info screen shows it).  The bring-up panel (menu,
+   "Bring-up panel") shows on the CRT too, so it can be read there.
+   No picture at all: say whether the CRT reports a signal (sync but no
+   colour points at the DAC clock; nothing at all points at sync).
+3. **Each other video mode in turn** (RGsB and YPbPr need the SOG switch on).
+4. **SNAC**: one pad, assignment "SNAC P1 -> Pocket P1"; then the Pocket's
+   own controls should be player 2.
+
 ## Log
 
 Date, build md5, what was seen, what it ruled out. One line each. The theories

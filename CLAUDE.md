@@ -144,6 +144,8 @@ modules/                                vendored CPUs and sound chips; VENDOR.md
 target/pocket/core_top.sv               APF glue; game-specific only below "@ The game"
 target/pocket/moomesa_mem.sv             SDRAM clients, download FIFO, burst arbiter, SRAM
 target/pocket/sdram_ctrl.sv sram_port.sv   proven on hardware; do not edit casually
+target/pocket/pocket_analogizer.sv     the Analogizer: clock hand-over, Y/C, SNAC -> key1..4
+target/pocket/analogizer/              RndMnkIII's adapter module, verbatim (docs/analogizer.md)
 projects/                               Quartus project, SDC, report_worst.tcl
 platform/pocket/                        OpenGateware's gateman-pocket (Marcus Andrade) — leave alone
 pkg/pocket/                             what goes on the SD card (never a ROM)
@@ -167,6 +169,7 @@ tools/check_frames.py artifacts/still -w W -h H   # THREE CONSECUTIVE frames of 
 tools/check_json.py pkg/pocket --active WxH       # what the firmware silently refuses
 sim/run_mem.sh -quick        # a minute; after touching moomesa_mem.sv (drop -quick before a flash)
 sim/run_system.sh -frames 10 # the whole machine through the real memory glue
+sim/run_analogizer.sh        # the Analogizer path, read at the cartridge pins
 tools/vendor.sh              # list the CPU and sound cores it can fetch from upstream
 ./build-local.sh map         # two minutes; catches what Verilator cannot
 ./build-local.sh compile     # 10-25 minutes; then read projects/output_files/*.sta.summary

@@ -1,0 +1,19 @@
+#!/bin/sh
+# The Analogizer path on its own (sim/tb_analogizer.sv): the wrapper and the
+# vendored adapter module, driven at this core's raster and clocks, read at
+# the cartridge pins as the DAC reads them.  Run it after touching
+# target/pocket/pocket_analogizer.sv or the vendored module, and before a
+# flash that changes either.  About a minute.
+set -e
+here=$(cd "$(dirname "$0")" && pwd)
+cd "$here"
+verilator --version >/dev/null 2>&1 || { echo "verilator not found" >&2; exit 2; }
+A=../target/pocket/analogizer
+verilator --binary --timing -j "${JOBS:-8}" -O2 -Wno-fatal -Wno-lint -Wno-style \
+    -Wno-PROCASSWIRE -Wno-MULTIDRIVEN -Wno-TIMESCALEMOD \
+    --top-module tb_analogizer -Mdir obj_analogizer \
+    ../target/pocket/pocket_analogizer.sv ../platform/pocket/helpers/synch_3.sv \
+    $A/*.v $A/*.sv ps2_keyboard_stub.v tb_analogizer.sv > obj_analogizer.log 2>&1 \
+    || { tail -40 obj_analogizer.log; exit 1; }
+./obj_analogizer/Vtb_analogizer | tee obj_analogizer/run.log
+grep -q "^PASS" obj_analogizer/run.log

@@ -25,9 +25,9 @@ DMA.  All of it is in the gateware; the machine is described in
 ## Status
 
 **Runs on the Pocket**: boots, passes its RAM/ROM check, and plays through
-stage 1 and into stage 2.  The build fits (49% of the ALMs, 264 of 308 RAM
-blocks) and meets timing at every corner (worst setup slack +0.073 ns at
-96 MHz).  `docs/bringup.md` logs every hardware run.
+stage 1 and into stage 2.  The build fits (58% of the ALMs, 278 of 308 RAM
+blocks, with the Analogizer) and meets timing at every corner (worst setup
+slack +0.354 ns at 96 MHz).  `docs/bringup.md` logs every hardware run.
 
 ## Controls and menu
 
@@ -47,6 +47,19 @@ service switch, which opens the game's own test and settings menu
 are saved to the SD card.  On a first launch the Pocket creates that save
 file blank; the core ignores a blank save and starts from the romset's
 defaults.
+
+## Analogizer
+
+The core supports RndMnkIII's [Analogizer](https://github.com/RndMnkIII/Analogizer)
+adapter: the board's native 15 kHz picture out of the VGA port (RGBS, RGsB,
+YPbPr, Y/C, or scandoubled for a VGA monitor), and up to four SNAC
+controllers.  It is set up from `analogizer.bin` in
+`/Assets/analogizer/common/`, the file Pupdate and AnalogizerConfigurator
+write and every Analogizer core shares; without it the core is unchanged.
+Because the core declares a cartridge adapter, the Pocket powers the slot:
+take any game cartridge out first.  `docs/analogizer.md` has the modes, the
+controller assignments, and what has and has not been checked (the path is
+proven in simulation; no Analogizer has been tried with this core yet).
 
 ## What is proven, and by what
 
@@ -125,6 +138,7 @@ sim/run_mem.sh moomesa.rom         # the Pocket's memory path, at the loader's r
 python3 tools/check_render.py moomesa.rom   # the Python model against MAME, 47 states
 sim/run_video.sh moomesa.rom       # the video RTL against MAME, 47 states
 sim/check_k539.sh moomesa.rom      # the K054539 against MAME's own code
+sim/run_analogizer.sh              # the Analogizer path, read at the cartridge pins
 sim/run_machine.sh moomesa.rom -frames 450 -every 50 -o out   # the machine, ideal memories
 sim/run_system.sh moomesa.rom -frames 450                     # the machine, real memory glue
 ```
@@ -133,6 +147,8 @@ sim/run_system.sh moomesa.rom -frames 450                     # the machine, rea
 
 `CREDITS.md` is the full list.
 
+- **RndMnkIII** -- the Analogizer adapter and its module, with Mike
+  Simone's Y/C encoder and MiSTer's scandoubler inside it.
 - **MAME** -- the machine is written from `moo.cpp` (driver by R. Belmont and
   Acho A. Tang, based on Olivier Galibert's `xexex.cpp`; protection
   information from ElSemi and Olivier Galibert) and its Konami device models
