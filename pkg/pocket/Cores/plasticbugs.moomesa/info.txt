@@ -21,10 +21,9 @@ it to Assets/moomesa/common/moomesa.rom
   saved on the SD card.
 
 Analogizer: CRT video and SNAC pads,
-set from analogizer.bin (Pupdate or
-AnalogizerConfigurator) in
-Assets/analogizer/common. The slot is
-powered: remove any cartridge first.
+set in this core's menu (Analogizer:
+On). The slot is powered: remove any
+cartridge first.
 
 Not modelled: flip screen. If it is set
 in the service menu the backgrounds

@@ -3,8 +3,7 @@
         "magic": "APF_VER_1",
         "metadata": {
             "platform_ids": [
-                "moomesa",
-                "analogizer"
+                "moomesa"
             ],
             "shortname": "moomesa",
             "description": "Wild West C.O.W.-Boys of Moo Mesa (Konami, 1992) arcade core",

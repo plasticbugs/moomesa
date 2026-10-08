@@ -6,12 +6,15 @@
 // same in every core built from this template.  docs/analogizer.md is the
 // long form.
 //
-//   * Settings come from /Assets/analogizer/common/analogizer.bin, the file
-//     Pupdate and AnalogizerConfigurator write, loaded by the Pocket into data
-//     slot "Analogizer config" at bridge 0xF7000000.  It is shared by every
-//     Analogizer core on the card.  Bit 5 is the master enable: with no file,
-//     or with it off, the cartridge port stays in its idle state and the core
-//     is exactly what it was without an Analogizer.
+//   * Settings come from the core's own menu: interact.json entries that
+//     write fields of one word at bridge 0xF7000000 (RndMnkIII's "Pocket
+//     Menu" kind; the Pocket keeps them per core).  The layout is the one
+//     the adapter module decodes, bit 5 the master enable.  With it off --
+//     the default -- the cartridge port stays in its idle state and the core
+//     is exactly what it was without an Analogizer.  The word is read back
+//     from a register here, combinationally: the Pocket's bridge samples read
+//     data four clocks after the address and before it pulses bridge_rd, and
+//     the adapter module only updates its own read-back on that pulse.
 //   * The picture is handed over from the core's clock to `clk`, the
 //     Analogizer's, one pixel per `src_pix_ce`.  `clk` also clocks the DAC
 //     through the cartridge port, so keep it at 48 MHz or so (the rate the
@@ -43,8 +46,7 @@ module pocket_analogizer #(
     input  wire         src_hb,
     input  wire         src_vb,
 
-    // bridge (clk_74a): the settings file is written to 0xF7000000
-    input  wire         bridge_endian_little,
+    // bridge (clk_74a): the menu writes the settings word to 0xF7000000
     input  wire  [31:0] bridge_addr,
     input  wire         bridge_rd,
     output wire  [31:0] bridge_rd_data,
@@ -145,6 +147,15 @@ module pocket_analogizer #(
     wire  [3:0] a_video_type;
     wire        pal = (a_video_type == 4'h4);   // Y/C PAL
 
+    // --------------------------------------------------- the settings word
+    // as the menu last wrote it, for the firmware to read back (header)
+    logic [31:0] menu_word;
+    initial menu_word = 32'h0;
+    always @(posedge clk_74a)
+        if (bridge_wr && bridge_addr[31:24] == 8'hF7 && bridge_addr[3:0] == 4'h0)
+            menu_word <= bridge_wr_data;
+    assign bridge_rd_data = menu_word;
+
     // ------------------------------------------------------------ the adapter
     wire        a_ena, a_blank;
     wire  [4:0] a_cont_type;
@@ -158,8 +169,9 @@ module pocket_analogizer #(
         .clk_74a(clk_74a), .i_clk(clk), .i_rst_apf(a_rst), .i_rst_core(a_rst),
         .video_clk(clk),
         .R(a_r), .G(a_g), .B(a_b), .Hblank(a_hb), .Vblank(a_vb), .Hsync(a_hs), .Vsync(a_vs),
-        .bridge_endian_little(bridge_endian_little), .bridge_addr(bridge_addr),
-        .bridge_rd(bridge_rd), .analogizer_bridge_rd_data(bridge_rd_data),
+        // the menu writes numbers, not file bytes: no byte swap either way
+        .bridge_endian_little(1'b1), .bridge_addr(bridge_addr),
+        .bridge_rd(bridge_rd), .analogizer_bridge_rd_data(),
         .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
         .analogizer_ena_out(a_ena), .snac_game_cont_type_out(a_cont_type),
         .snac_cont_assignment_out(a_cont_assign), .analogizer_video_type_out(a_video_type),

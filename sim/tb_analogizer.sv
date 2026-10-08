@@ -1,13 +1,17 @@
 // The Analogizer path on its own: target/pocket/pocket_analogizer.sv with the
 // vendored adapter module behind it, driven the way core_top drives it -- this
 // core's raster (512 x 264 dots, 384 x 224 visible, one dot per 12 clocks of
-// 96 MHz), the 48 MHz Analogizer clock in phase with it, and the settings file
-// written over the bridge as the Pocket writes analogizer.bin.  The raster
+// 96 MHz), the 48 MHz Analogizer clock in phase with it, and the settings word
+// written over the bridge as the core's menu writes it.  The raster
 // is set at the top of the module: change it with the core's.  It reads the
 // cartridge pins as the ADV7123 would and checks:
 //
-//   idle    no file: every cartridge pin as on a core without an Analogizer,
-//           and the controller words pass through
+//   idle    menu default: every cartridge pin as on a core without an
+//           Analogizer, and the controller words pass through
+//   menu    every option of every Analogizer entry in the package's
+//           interact.json, set the way the firmware sets a masked entry
+//           (read the word back as the bridge samples it, merge, write):
+//           the word, the adapter's copy of it and the enable each follow
 //   RGBS    every visible pixel of a frame reaches the DAC pins, in order,
 //           as its top six bits per channel; csync once a line, hsync-long
 //   SVGA    the scandoubler: twice the lines per frame, at half the period
@@ -73,12 +77,12 @@ module tb_analogizer;
     logic [31:0] bridge_addr = 32'h0, bridge_wr_data = 32'h0;
     logic        bridge_wr = 1'b0, bridge_rd = 1'b0;
     wire  [31:0] bridge_rd_data;
-    // analogizer.bin is the setting word little-endian; the Pocket hands a
-    // file over big-endian (bridge_endian_little = 0 in core_top)
+    // the whole word, as a firmware that merges the menu's fields itself
+    // writes it: a number, no byte swap
     task automatic write_settings(input [31:0] v);
         @(posedge clk_74a);
         bridge_addr    <= 32'hF7000000;
-        bridge_wr_data <= {v[7:0], v[15:8], v[23:16], v[31:24]};
+        bridge_wr_data <= v;
         bridge_wr      <= 1'b1;
         @(posedge clk_74a);
         bridge_wr      <= 1'b0;
@@ -88,6 +92,41 @@ module tb_analogizer;
                                        input [3:0] video, input blank);
         settings = {16'h0, 1'b0, blank, video, assign_, ena, snac};
     endfunction
+
+    // a read as io_bridge_peripheral does one: the address, then the data
+    // sampled four clocks later, and only then the bridge_rd pulse
+    task automatic read_settings(output [31:0] v);
+        @(posedge clk_74a);
+        bridge_addr <= 32'hF7000000;
+        repeat (4) @(posedge clk_74a);
+        v = bridge_rd_data;
+        bridge_rd <= 1'b1;
+        @(posedge clk_74a);
+        bridge_rd <= 1'b0;
+    endtask
+    // one menu option, as the firmware sets a masked entry, and checked
+    logic [31:0] menu_model = 32'h0;
+    task automatic menu_try(input [31:0] mask, input [31:0] value, input string what);
+        logic [31:0] w;
+        if ((value & mask) != 0) begin
+            $display("  %s: value %08h has bits outside its field", what, value);
+            fail("menu: an option writes outside its mask");
+        end
+        read_settings(w);
+        if (w !== menu_model) begin
+            $display("  %s: read back %08h, menu holds %08h", what, w, menu_model);
+            fail("menu: the word does not read back");
+        end
+        menu_model = (menu_model & mask) | value;
+        write_settings((w & mask) | value);
+        if (dut.u_analogizer.analogizer_config_s[30:0] !== menu_model[30:0] ||
+            ena !== menu_model[5]) begin
+            $display("  %s: adapter has %08h ena %b, menu wrote %08h", what,
+                     dut.u_analogizer.analogizer_config_s, ena, menu_model);
+            fail("menu: the adapter does not see the menu's word");
+        end
+    endtask
+`include "menu.svh"
 
     // --------------------------------------------------------- controllers
     logic [31:0] cont1_key = 32'h1000_0001, cont2_key = 32'h2000_0002;
@@ -107,7 +146,7 @@ module tb_analogizer;
         .clk_74a(clk_74a), .clk(clk), .rst(rst),
         .clk_src(clk_src), .src_pix_ce(pix_ce), .src_rgb(rgb),
         .src_hs(hs), .src_vs(vs), .src_hb(hb), .src_vb(vb),
-        .bridge_endian_little(1'b0), .bridge_addr(bridge_addr), .bridge_rd(bridge_rd),
+        .bridge_addr(bridge_addr), .bridge_rd(bridge_rd),
         .bridge_rd_data(bridge_rd_data), .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
         .cont1_key(cont1_key), .cont2_key(cont2_key), .cont3_key(cont3_key), .cont4_key(cont4_key),
         .key1(key1), .key2(key2), .key3(key3), .key4(key4),
@@ -247,7 +286,7 @@ module tb_analogizer;
         // FPGA side drives nothing onto the port whatever it holds)
         if (key1 !== cont1_key || key2 !== cont2_key || key3 !== cont3_key || key4 !== cont4_key)
             fail("idle: controller words do not pass through");
-        if (ena !== 1'b0 || pocket_off !== 1'b0) fail("idle: enabled with no file");
+        if (ena !== 1'b0 || pocket_off !== 1'b0) fail("idle: enabled by default");
     endtask
 
     // SNAC: the pads, forced at the adapter module's outputs (the serial
@@ -297,6 +336,13 @@ module tb_analogizer;
         repeat (50) @(posedge clk);
         check_idle();                         // out of reset, still no file
         $display("idle: checked");
+
+        menu_entries();                       // every option, in file order
+        if (MENU_OPTIONS < 20) fail("menu: interact.json has too few Analogizer options");
+        write_settings(32'h0);                // back to the default
+        repeat (10) @(posedge clk);
+        check_idle();
+        $display("menu: %0d options set by read-merge-write, each seen by the adapter", MENU_OPTIONS);
 
         write_settings(settings(1'b1, 5'h00, 4'd0, 4'h0, 1'b0));   // RGBS
         if (ena !== 1'b1) fail("enable bit not seen");

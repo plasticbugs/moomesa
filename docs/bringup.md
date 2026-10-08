@@ -103,18 +103,22 @@ Not yet run on hardware (docs/analogizer.md says what the bench proved).  The
 first person with an adapter, in this order -- each step's reading tells the
 next one where to look:
 
-1. **No `analogizer.bin` on the card.**  The core must play exactly as
+1. **Menu "Analogizer: Off"** (the default).  The core must play exactly as
    without the adapter, Pocket screen and controls.  If it does not, the
    cart port is not idle: stop there.
-2. **`analogizer.bin` with enable on, RGBS, SNAC none, Pocket screen on.**
+2. **Menu: Analogizer On, Video RGBS, SNAC Adapter None.**
    Expected: the same picture on the Pocket and on the CRT, 15.625 kHz /
    59.19 Hz (a PVM's info screen shows it).  The bring-up panel (menu,
    "Bring-up panel") shows on the CRT too, so it can be read there.
    No picture at all: say whether the CRT reports a signal (sync but no
    colour points at the DAC clock; nothing at all points at sync).
 3. **Each other video mode in turn** (RGsB and YPbPr need the SOG switch on).
-4. **SNAC**: one pad, assignment "SNAC P1 -> Pocket P1"; then the Pocket's
+4. **SNAC**: one pad, assignment "SNAC P1 -> P1"; then the Pocket's
    own controls should be player 2.
+5. **The menu's memory**: change Video, quit the core and load it again.
+   The setting, and Analogizer On, should still be there.  Then change
+   one entry and check the others did not move (the bench's read-back
+   check, on the real firmware).
 
 ## Log
 
@@ -184,3 +188,8 @@ that died belong here as much as the one that lived.
   "It's perfect."  The final boss's fog fades and stays gone; the intro's
   meteor lands on visible ground.  The per-tile mixing rule confirmed on the
   Pocket against the arcade's behaviour.
+- 2026-10-08, bitstream 76f07c6ea87c211d43a3fc4e7c1c8d87 (Analogizer, menu
+  settings) copied to the card, not yet run.  With "Analogizer: Off" it
+  should play exactly as 7974346f did; the first reading is that, then the
+  menu entries appear under the game's own.  (The file-settings build
+  98d985e0 went on the card earlier the same day and was replaced unrun.)

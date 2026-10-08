@@ -9,9 +9,27 @@ here=$(cd "$(dirname "$0")" && pwd)
 cd "$here"
 verilator --version >/dev/null 2>&1 || { echo "verilator not found" >&2; exit 2; }
 A=../target/pocket/analogizer
+# The menu's Analogizer entries, read from the package's interact.json, so the
+# bench drives the menu that ships: one menu_try() per option of every entry
+# at 0xF7000000, in file order.
+mkdir -p obj_analogizer
+python3 - ../pkg/pocket/Cores/*/interact.json > obj_analogizer/menu.svh <<'PY'
+import json, sys
+n = 0
+print('task automatic menu_entries();')
+for v in json.load(open(sys.argv[1]))['interact']['variables']:
+    if str(v.get('address', '')).lower() != '0xf7000000':
+        continue
+    for o in v.get('options', []):
+        print(f'    menu_try(32\'h{int(v["mask"], 16):08X}, 32\'h{int(str(o["value"]), 16):08X}, '
+              f'"{v["name"]}: {o["name"]}");')
+        n += 1
+print('endtask')
+print(f'localparam int MENU_OPTIONS = {n};')
+PY
 verilator --binary --timing -j "${JOBS:-8}" -O2 -Wno-fatal -Wno-lint -Wno-style \
     -Wno-PROCASSWIRE -Wno-MULTIDRIVEN -Wno-TIMESCALEMOD \
-    --top-module tb_analogizer -Mdir obj_analogizer \
+    --top-module tb_analogizer -Mdir obj_analogizer -Iobj_analogizer \
     ../target/pocket/pocket_analogizer.sv ../platform/pocket/helpers/synch_3.sv \
     $A/*.v $A/*.sv ps2_keyboard_stub.v tb_analogizer.sv > obj_analogizer.log 2>&1 \
     || { tail -40 obj_analogizer.log; exit 1; }

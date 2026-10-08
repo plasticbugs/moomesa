@@ -29,12 +29,15 @@ So this checks the things the firmware cares about and a parser does not:
     32 lines -- where the on-screen keyboard is drawn -- cut off, and the
     whole image flickering;
   * the files are no larger than the largest this firmware is known to
-    accept, because size is the one limit that cannot be read off the file;
-  * an Analogizer core's three settings agree (docs/analogizer.md): the
-    "analogizer.bin" slot at 0xF7000000, its parameters' platform index
-    (bits 25:24) pointing at "analogizer" in core.json's platform_ids, and
-    the cartridge port powered.  Any one missing and the Pocket loads the
-    core happily, never hands it the file, and the adapter stays dark.
+    accept, because size is the one limit that cannot be read off the file,
+    and interact.json has no more variables or options than any core that
+    loads (the survey below);
+  * an Analogizer core's menu and package agree (docs/analogizer.md): its
+    interact.json entries at 0xF7000000 each write only inside their
+    mask, one of them sets the enable (bit 5), no data slot also writes
+    0xF7000000 (a file loaded there would overwrite the menu's word), and
+    the cartridge port is powered.  Any of those wrong and the Pocket loads
+    the core happily while the adapter stays dark or ignores the menu.
 
 It exits non-zero and prints every fault, not just the first.
 """
@@ -59,6 +62,7 @@ NAME_MAX = 26
 OPTS_MAX = 16
 SIZE_MAX = 7600
 TOTAL_OPTS_MAX = 52    # atarisy2's, the most of any core that loads here
+VARS_MAX = 14
 
 MAGIC = {
     'core.json': 'APF_VER_1', 'data.json': 'APF_VER_1',
@@ -117,6 +121,9 @@ def main(argv):
 
         if base == 'interact.json':
             v = d['interact'].get('variables', [])
+            if len(v) > VARS_MAX:
+                fault(path, f'{len(v)} variables, more than the {VARS_MAX} of any '
+                            f'core that loads here')
             total = sum(len(x.get('options', [])) for x in v)
             if total > TOTAL_OPTS_MAX:
                 fault(path, f'{total} options in the whole file, more than the '
@@ -201,41 +208,49 @@ def main(argv):
                         fault(path, f'slot {i} is required but names no filename'
                                     + (' (and not every instance JSON names one)' if insts else ''))
 
-    # The Analogizer: the settings file is only ever read from the platform
-    # folder the slot's parameters name, so the slot, the platform id and the
-    # cartridge port have to agree across two files.
+    # The Analogizer: settings from the core's own menu, one word at
+    # 0xF7000000 that the masked entries share (pocket_analogizer.sv).
     for core_dir in sorted(glob.glob(os.path.join(root, 'Cores', '*'))):
         cj, dj = os.path.join(core_dir, 'core.json'), os.path.join(core_dir, 'data.json')
+        ij = os.path.join(core_dir, 'interact.json')
         try:
             core = json.load(open(cj))['core']
             slots = json.load(open(dj))['data'].get('data_slots', [])
+            menu = json.load(open(ij))['interact'].get('variables', [])
         except Exception:
             continue
-        ana = [s for s in slots if s.get('filename') == 'analogizer.bin'
-               or str(s.get('address', '')).lower() == '0xf7000000']
-        if not ana:
+        ana = [v for v in menu if str(v.get('address', '')).lower() == '0xf7000000']
+        file_slots = [s for s in slots if s.get('filename') == 'analogizer.bin'
+                      or str(s.get('address', '')).lower() == '0xf7000000']
+        if not ana and not file_slots:
             continue
-        ids = core.get('metadata', {}).get('platform_ids', [])
-        for s in ana:
-            if str(s.get('address', '')).lower() != '0xf7000000':
-                fault(dj, f'Analogizer slot at {s.get("address")}; the adapter '
-                          f'module reads its settings at 0xF7000000')
-            if s.get('filename') != 'analogizer.bin':
-                fault(dj, f'Analogizer slot names {s.get("filename")!r}, not '
-                          f'"analogizer.bin", the file the configurators write')
-            if s.get('required'):
-                fault(dj, 'Analogizer slot is required: a card without the '
-                          'file would refuse to load the core')
+        for s in file_slots:
+            fault(dj, f'data slot {s.get("id")} writes the Analogizer word at '
+                      f'0xF7000000; this core sets it from its menu, and a file '
+                      f'loaded there would overwrite the menu\'s settings')
+        enable = False
+        for v in ana:
             try:
-                idx = (int(str(s.get('parameters', '0')), 16) >> 24) & 3
+                mask = int(str(v.get('mask')), 16)
             except ValueError:
-                idx = 0
-            if idx >= len(ids) or ids[idx] != 'analogizer':
-                fault(dj, f'Analogizer slot parameters name platform index {idx}, '
-                          f'but core.json platform_ids is {ids}: the file would '
-                          f'be looked for in the wrong Assets folder')
+                fault(ij, f'{v.get("name")!r} at 0xF7000000 has no mask: it would '
+                          f'clear every other Analogizer setting')
+                continue
+            for o in v.get('options', []) + ([v] if 'value' in v and v.get('type') != 'action' else []):
+                try:
+                    val = int(str(o.get('value')), 16)
+                except ValueError:
+                    continue
+                if val & mask:
+                    fault(ij, f'{v.get("name")!r} option {o.get("name")!r} writes '
+                              f'{o.get("value")}, outside its mask {v.get("mask")}')
+                if val & 0x20 and not mask & 0x20:
+                    enable = True
+        if ana and not enable:
+            fault(ij, 'no Analogizer entry sets the enable (bit 5 of 0xF7000000): '
+                      'the adapter would never turn on')
         if core.get('framework', {}).get('hardware', {}).get('cartridge_adapter') != 0:
-            fault(cj, 'Analogizer slot present but cartridge_adapter is not 0: '
+            fault(cj, 'Analogizer menu present but cartridge_adapter is not 0: '
                       'the cartridge port is not powered')
 
     for f in bad:

@@ -272,7 +272,7 @@ module core_top
     assign bridge_endian_little = 0;
 
     // cart is unused unless the Analogizer has it (pocket_analogizer, below,
-    // which holds these same levels until its settings file enables it), so
+    // which holds these same levels until its menu entry enables it), so
     // set all level translators accordingly
     // directions are 0:IN, 1:OUT
     generate
@@ -549,7 +549,7 @@ module core_top
             32'hF4000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Extra DIP Switches
             32'hF8xxxxxx: begin bridge_rd_data <= cmd_bridge_rd_data;   end // APF Bridge (Reserved)
             32'h2xxxxxxx: begin bridge_rd_data <= sv_bridge_rd_data;    end // the save slot (EEPROM)
-            32'hF7xxxxxx: begin bridge_rd_data <= ana_bridge_rd_data;   end // Analogizer settings file
+            32'hF7xxxxxx: begin bridge_rd_data <= ana_bridge_rd_data;   end // Analogizer settings (menu)
             32'hFA000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Status Low  [31:0]
             32'hFB000000: begin bridge_rd_data <= int_bridge_rd_data;   end // Status High [63:32]
             default:      begin bridge_rd_data <= 0;                    end
@@ -1200,7 +1200,7 @@ module core_top
         vr_q  <= ovl_r; vg_q <= ovl_g; vb_q <= ovl_b;
         vhs_q <= g_hs; vvs_q <= g_vs; vde_q <= g_de;
     end
-    //! "Blank the Pocket screen" from the Analogizer's settings file: the
+    //! "Analogizer: On, Pocket off" in the menu: the
     //! picture goes to the CRT only.  Syncs and DE keep running for the scaler.
     wire ana_pocket_off;
     reg  [1:0] poff_s = 2'b00;
@@ -1217,8 +1217,9 @@ module core_top
     //! It takes the same picture the Pocket gets -- bring-up panel included,
     //! so the panel can be read off a CRT -- at the board's own 15.625 kHz /
     //! 59.19 Hz, 512 dots a line, and is held idle until the game is loaded.
-    //! With no analogizer.bin on the card, or its enable off, the cartridge
-    //! port stays as an unused one and key1..key4 are cont1..cont4_key.
+    //! Set from the core's menu (interact.json, 0xF7000000).  With the menu's
+    //! "Analogizer" off, the default, the cartridge port stays as an unused
+    //! one and key1..key4 are cont1..cont4_key.
     //! ------------------------------------------------------------------
     generate
         if(USE_ANALOGIZER == 1) begin : analogizer
@@ -1227,7 +1228,7 @@ module core_top
                 .clk_src(clk_sys), .src_pix_ce(g_pix_ce),
                 .src_rgb({ovl_r, ovl_g, ovl_b}),
                 .src_hs(g_hs), .src_vs(g_vs), .src_hb(g_hb), .src_vb(g_vb),
-                .bridge_endian_little(bridge_endian_little), .bridge_addr(bridge_addr),
+                .bridge_addr(bridge_addr),
                 .bridge_rd(bridge_rd), .bridge_rd_data(ana_bridge_rd_data),
                 .bridge_wr(bridge_wr), .bridge_wr_data(bridge_wr_data),
                 .cont1_key(cont1_key), .cont2_key(cont2_key),
