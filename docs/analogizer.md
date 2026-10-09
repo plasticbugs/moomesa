@@ -23,12 +23,20 @@ does not read that file). The Pocket remembers them for this core.
 | Analogizer Video | RGBS, RGsB, YPbPr, Y/C NTSC, Y/C PAL, Scandoubler, Scandoubler 25% / 50% / 75%, Scandoubler HQ2x |
 | SNAC Adapter | None, DB15, NES, SNES, PCE 2-button, PCE 6-button, PCE Multitap, DB15 Fast, SNES A,B<->X,Y, PSX Digital, PSX Digital Fast, PSX Analog, PSX Analog Fast |
 | SNAC Assignment | the six below |
+| Analogizer H Position | -24 to +24 dots; + moves the picture right |
+| Analogizer V Position | -16 to +16 lines; + moves the picture down |
 
 With **Analogizer** off the core behaves exactly as it did without Analogizer
 support. The adapter itself is set up as its wiki's
 [How to use it](https://github.com/RndMnkIII/Analogizer/wiki/How-to-use-it%3F)
 says: SNAC switch in position A, 5 V into its USB-C port, the SCART cable's
 audio jack in the Pocket's headphone socket.
+
+**Position.** The two sliders move the picture on the CRT, in the core's
+own dots and lines, for a set whose picture sits off centre (the first one
+tried showed it about 10 lines high: V Position +10).  They move the syncs,
+not the picture, so nothing is cropped and every mode follows; the size is
+still the set's to adjust.  0 is the board's own timing.
 
 **Video.** The core sends the board's own signal: 384 × 224 visible, 15.625
 kHz lines, 59.19 Hz, the timing a 15 kHz arcade monitor or a PVM expects.
@@ -66,9 +74,12 @@ PlayStation pad in analog mode steers with its left stick.
 so the Pocket powers the slot whether or not an Analogizer is in it. Do not
 leave a game cartridge in the slot while this core runs.
 
-**Not verified on hardware by this core's maintainer**, who has no Analogizer
-or CRT. What has been checked is listed under *What was measured* below. Send
-problems with the adapter itself to the Analogizer project.
+**One run on hardware so far** (2026-10-08, docs/bringup.md): the menu
+entries, and the picture on a CRT, looked right, with the picture about 10
+lines high on that set. The other video modes, SNAC and the position
+sliders have not been tried. What else has been checked is listed under
+*What was measured* below. Send problems with the adapter itself to the
+Analogizer project.
 
 ## For the developer
 
@@ -80,10 +91,10 @@ problems with the adapter itself to the Analogizer project.
 | `target/pocket/pocket_analogizer.sv` | the wrapper: clock hand-over, Y/C constants, SNAC → controller words. Core-agnostic; the same file in the template. |
 | `target/pocket/core_top.sv` | `USE_ANALOGIZER`, the instance (after the bring-up panel), `key1..key4` in place of `cont1..4_key`, the bridge read at `0xF7xxxxxx`, the Pocket-screen blank, and the cart pins' idle levels when it is off. |
 | `core_pll` `outclk_4` | the Analogizer's 48 MHz, `clk_sys / 2` in phase; in the SDC's PLL group. |
-| `pkg/.../interact.json` | the four entries above, ids 70–73, each a masked field of the word at `0xF7000000`. The enable and the Pocket-screen blank share one entry to keep the menu inside the 14 entries any installed core has (`tools/check_json.py`) |
+| `pkg/.../interact.json` | the entries above: ids 70–73, each a masked field of the word at `0xF7000000`, and 74–75, signed sliders at `0xF7000004` and `0xF7000008`. The enable and the Pocket-screen blank share one entry; Analogue's limit is 16 entries, and 20 with the data slots (`tools/check_json.py`) |
 | `pkg/.../core.json` | `"cartridge_adapter": 0` (powers the slot) |
 | `sim/run_analogizer.sh` | the bench (below) |
-| `tools/check_json.py` | fails if an entry writes outside its mask, none sets the enable, a data slot also writes `0xF7000000`, or the slot is not powered |
+| `tools/check_json.py` | fails if an entry writes outside its mask, none sets the enable, a position slider is not signed within ±127, a data slot also writes `0xF7000000`, or the slot is not powered |
 
 ### The settings word
 
@@ -106,10 +117,40 @@ and `pocket_analogizer` keeps its own copy to read back, combinationally.
 The Pocket's bridge (`io_bridge_peripheral.sv`) samples read data four clocks
 after it presents the address and pulses `bridge_rd` only afterwards; the
 adapter module updates its read-back on that pulse, so it would hand back
-the *previous* read's value. If the firmware merges a masked entry by
-reading the word, that stale value would wipe the other fields: in the
-bench, choosing a video mode turned the Analogizer off. RndMnkIII's menu
+the *previous* read's value. The firmware merges a masked entry by
+reading the word back (Analogue's interact.json docs: every entry not
+`writeonly` is read back every frame), so that stale value would wipe the
+other fields: in the bench, choosing a video mode turned the Analogizer off. RndMnkIII's menu
 cores (Gauntlet) read the word back the same way, from a register.
+
+**Picture position.** Two more words, each a whole signed slider value
+(no mask): `0xF7000004` horizontal in dots, + right, and `0xF7000008`
+vertical in lines, + down. `pocket_analogizer` reads the low 8 bits and
+reads both words back, since the firmware reads every entry that is not
+`writeonly` each frame. The adapter module stores them in a table it never
+reads (`config_mem`). They move the syncs, not the picture: hsync n dots
+earlier puts the picture n dots right, vsync n lines earlier puts it n
+lines down. Earlier is built as a line (or frame) less n later: each sync
+is re-made from the source's own rising edge after a delay counted in
+dots, as wide as the source's, with the line and frame measured from the
+source's syncs; the vsync's delay is whole lines, so its edges keep their
+place in the line. RGB and blanking go through one clock later with them,
+and at 0 each sync passes straight through.
+
+A re-made sync starts only once it has been off at least as long as it is
+on. The adapter module's `sync_fix` decides each sync's polarity afresh
+every period, by whether the signal was high longer than low. A jump
+between settings in one write (one "large" slider step, or a value loaded
+at start) can put the next pulse just after the last one ends, and that
+period reads as active-low: csync turned inside out for a frame (a line,
+for hsync). With the rule such a jump skips one pulse instead.
+
+The range is this core's, from its blanking (dots 424–551 and lines
+240–279, modulo 512 and 264): hsync at 457–496 can move 32 dots earlier
+before it meets the picture, and 27 later before the Y/C colour burst
+(which ends about 28 dots after hsync does) would; vsync at 257–263 can move 16 lines
+either way and stay in the vertical blanking. So ±24 dots and ±16 lines.
+The bench fails if, at either end, csync is low while a dot is drawn.
 
 **The file scheme, not used here.** The adapter module 1.4 was written for
 `analogizer.bin`, a file Pupdate and AnalogizerConfigurator write to
@@ -164,6 +205,19 @@ place of `cont1..4_key`, so the game's input logic did not change.
   - YPbPr and Y/C NTSC/PAL: no unknown on any pin for a frame.
   - All six SNAC assignments, the analog stick, and type "none" map as
     tabled.
+  - Position, at both ends of the shipped sliders (+24,+16 and -24,-16):
+    read back as written, the settings word untouched; at the pins csync
+    moves by exactly 144 clocks (24 dots) and 16 lines each way, the
+    picture is still all 86,016 dots with 0 differing, csync is never low
+    while a dot is drawn, and the scandoubler still makes 528 lines at
+    1536 clocks; back at 0, csync is where it started. A range of ±40
+    lines or +40 dots fails it (a sync inside the picture), and so does
+    a line length measured one dot short.
+  - A jump written just after a pulse that puts the next one right after
+    it (V +16 to +8, H +24 to -17, on a line with a picture): csync never
+    low while a dot is drawn over three frames. Without the off-time rule
+    the same run fails, csync inverted for a whole frame (V) and for a
+    line (H).
   - The blank bit, and enable off again returning the port to idle.
 - `sim/lint.sh`: the wrapper lints clean. The vendored files' warnings are
   dropped by path; their errors are not.
@@ -172,9 +226,16 @@ place of `cont1..4_key`, so the game's input logic did not change.
   0C, in the tile line buffer; SDRAM capture is not among the 20 worst hold
   paths). With the menu settings the Analogizer costs 1,484 ALMs
   (9,089 → 10,573, 57%), 13 RAM blocks (265 → 278 of 308) and 2 DSP blocks;
-  the file-settings build before it was 10,639.
+  the file-settings build before it was 10,639. The position sliders add
+  277 ALMs (10,850, 59%) and no RAM; that build's worst setup is +0.111 ns
+  (slow 0C, clk_sys) and worst hold +0.047 ns (fast 0C, the pixel
+  hand-over's toggle into the Analogizer's clock), SDRAM capture again
+  not among the 20 worst hold paths.
 
-**Not proven:** anything on hardware, and the SNAC serial protocols, which are
+**Not proven:** on hardware, anything past the one run above (one video
+mode, on one CRT); that the firmware writes a signed slider as a two's
+complement word (Analogue's docs show signed sliders, no installed core
+here uses one); and the SNAC serial protocols, which are
 the adapter module's and are forced at its outputs in the bench rather than
 driven over the pins. The Y/C and YPbPr encodings have no reference to compare
 against, only a run without unknowns.

@@ -30,11 +30,13 @@ So this checks the things the firmware cares about and a parser does not:
     whole image flickering;
   * the files are no larger than the largest this firmware is known to
     accept, because size is the one limit that cannot be read off the file,
-    and interact.json has no more variables or options than any core that
-    loads (the survey below);
+    interact.json has no more options than any core that loads (the
+    survey below), and the menu no more entries than Analogue documents;
+  * a slider's defaultval lies between its min and max;
   * an Analogizer core's menu and package agree (docs/analogizer.md): its
     interact.json entries at 0xF7000000 each write only inside their
-    mask, one of them sets the enable (bit 5), no data slot also writes
+    mask, one of them sets the enable (bit 5), the picture-position
+    sliders at 0xF7000004/8 fit the 8 signed bits read, no data slot also writes
     0xF7000000 (a file loaded there would overwrite the menu's word), and
     the cartridge port is powered.  Any of those wrong and the Pocket loads
     the core happily while the adapter stays dark or ignores the menu.
@@ -47,9 +49,10 @@ import os
 import re
 import sys
 
-# These are not from a document.  They are what a firmware that accepts a
-# file is observed to accept, surveyed across the seventeen cores installed
-# on the author's own Pocket (tools/survey_interact.py):
+# These, but for the menu's size, are not from a document.  They are what a
+# firmware that accepts a file is observed to accept, surveyed across the
+# seventeen cores installed on the author's own Pocket
+# (tools/survey_interact.py):
 #
 #     variables      up to 14      option values   up to 0x00C00000
 #     bytes          up to 7,597   options a list  up to 16
@@ -58,11 +61,17 @@ import sys
 #
 # The 23 characters an earlier version of this file called a limit was a
 # guess, and wrong: OpenJazz ships a 26-character name and loads.
+#
+# The menu's size is Analogue's own (developer docs, interact.json): "Up to
+# 16 UI entries from interact.json can be shown", and no more than 20
+# interact and data entries together.  The survey's 14 is only the most any
+# installed core happened to have.
 NAME_MAX = 26
 OPTS_MAX = 16
 SIZE_MAX = 7600
 TOTAL_OPTS_MAX = 52    # atarisy2's, the most of any core that loads here
-VARS_MAX = 14
+VARS_MAX = 16          # Analogue's documented limit
+ENTRIES_MAX = 20       # interact variables and data slots together
 
 MAGIC = {
     'core.json': 'APF_VER_1', 'data.json': 'APF_VER_1',
@@ -122,8 +131,16 @@ def main(argv):
         if base == 'interact.json':
             v = d['interact'].get('variables', [])
             if len(v) > VARS_MAX:
-                fault(path, f'{len(v)} variables, more than the {VARS_MAX} of any '
-                            f'core that loads here')
+                fault(path, f'{len(v)} variables, more than the {VARS_MAX} the '
+                            f'Pocket shows')
+            dj = os.path.join(os.path.dirname(path), 'data.json')
+            try:
+                ns = len(json.load(open(dj))['data'].get('data_slots', []))
+            except Exception:
+                ns = 0
+            if len(v) + ns > ENTRIES_MAX:
+                fault(path, f'{len(v)} variables and {ns} data slots, more than '
+                            f'the {ENTRIES_MAX} entries the Pocket allows together')
             total = sum(len(x.get('options', [])) for x in v)
             if total > TOTAL_OPTS_MAX:
                 fault(path, f'{total} options in the whole file, more than the '
@@ -165,6 +182,12 @@ def main(argv):
                         elif len(k['name']) > NAME_MAX:
                             fault(path, f'{name!r} option {k["name"]!r} is '
                                         f'{len(k["name"])} characters')
+                if x.get('type') == 'slider_u32':
+                    g = x.get('graphical', {})
+                    lo, hi, dv = g.get('min'), g.get('max'), x.get('defaultval')
+                    if not all(isinstance(n, int) for n in (lo, hi, dv)) or not lo <= dv <= hi:
+                        fault(path, f'{name!r} slider: min {lo!r}, max {hi!r}, '
+                                    f'defaultval {dv!r}; want integers, min <= defaultval <= max')
                 if x.get('type') != 'action' and 'address' not in x:
                     fault(path, f'{name!r} has no address')
 
@@ -246,6 +269,19 @@ def main(argv):
                               f'{o.get("value")}, outside its mask {v.get("mask")}')
                 if val & 0x20 and not mask & 0x20:
                     enable = True
+        for v in menu:
+            a = str(v.get('address', '')).lower()
+            if not a.startswith('0xf70000') or a == '0xf7000000':
+                continue
+            if a not in ('0xf7000004', '0xf7000008'):
+                fault(ij, f'{v.get("name")!r} writes {v.get("address")}; the Analogizer '
+                          f'reads only 0xF7000000, 0xF7000004 and 0xF7000008')
+                continue
+            g = v.get('graphical', {})
+            if (v.get('type') != 'slider_u32' or not g.get('signed')
+                    or not -127 <= g.get('min', 0) <= 0 <= g.get('max', 0) <= 127):
+                fault(ij, f'{v.get("name")!r}: a picture position is a signed slider '
+                          f'from -127..0 to 0..127 (pocket_analogizer reads 8 bits)')
         if ana and not enable:
             fault(ij, 'no Analogizer entry sets the enable (bit 5 of 0xF7000000): '
                       'the adapter would never turn on')

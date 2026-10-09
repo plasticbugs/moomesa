@@ -22,8 +22,9 @@ it to Assets/moomesa/common/moomesa.rom
 
 Analogizer: CRT video and SNAC pads,
 set in this core's menu (Analogizer:
-On). The slot is powered: remove any
-cartridge first.
+On; H and V Position centre the
+picture). The slot is powered: remove
+any cartridge first.
 
 Not modelled: flip screen. If it is set
 in the service menu the backgrounds

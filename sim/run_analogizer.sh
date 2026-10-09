@@ -11,7 +11,7 @@ verilator --version >/dev/null 2>&1 || { echo "verilator not found" >&2; exit 2;
 A=../target/pocket/analogizer
 # The menu's Analogizer entries, read from the package's interact.json, so the
 # bench drives the menu that ships: one menu_try() per option of every entry
-# at 0xF7000000, in file order.
+# at 0xF7000000, in file order, and both ends of the position sliders.
 mkdir -p obj_analogizer
 python3 - ../pkg/pocket/Cores/*/interact.json > obj_analogizer/menu.svh <<'PY'
 import json, sys
@@ -26,6 +26,16 @@ for v in json.load(open(sys.argv[1]))['interact']['variables']:
         n += 1
 print('endtask')
 print(f'localparam int MENU_OPTIONS = {n};')
+# the position sliders' range, to try both ends of it
+pos = {}
+for v in json.load(open(sys.argv[1]))['interact']['variables']:
+    a = str(v.get('address', '')).lower()
+    if a in ('0xf7000004', '0xf7000008'):
+        g = v['graphical']
+        pos['H' if a.endswith('4') else 'V'] = (g['min'], g['max'])
+for k in 'HV':
+    lo, hi = pos.get(k, (0, 0))
+    print(f'localparam int POS_{k}_MIN = {lo}, POS_{k}_MAX = {hi};')
 PY
 verilator --binary --timing -j "${JOBS:-8}" -O2 -Wno-fatal -Wno-lint -Wno-style \
     -Wno-PROCASSWIRE -Wno-MULTIDRIVEN -Wno-TIMESCALEMOD \

@@ -99,9 +99,10 @@ Row 2 proves the path, not the image; `sim/run_mem.sh` proves the image.
 
 ## With an Analogizer
 
-Not yet run on hardware (docs/analogizer.md says what the bench proved).  The
-first person with an adapter, in this order -- each step's reading tells the
-next one where to look:
+First run on hardware 2026-10-08 (the log): "looks good", the picture about
+10 lines high on that CRT, which the position sliders below are for.
+docs/analogizer.md says what the bench proved.  With a new build, in this
+order -- each step's reading tells the next one where to look:
 
 1. **Menu "Analogizer: Off"** (the default).  The core must play exactly as
    without the adapter, Pocket screen and controls.  If it does not, the
@@ -119,6 +120,12 @@ next one where to look:
    The setting, and Analogizer On, should still be there.  Then change
    one entry and check the others did not move (the bench's read-back
    check, on the real firmware).
+6. **Position**: "Analogizer V Position" +10 should move the picture
+   about 10 lines down, + on "H Position" to the right, and both should
+   be kept across a reload.  The slider showing a value other than the
+   one set means the firmware is not reading 0xF7000004/8 back as written.
+   A picture that rolls or tears at either end of a slider means the
+   range is too wide for that set (say which end, and which mode).
 
 ## Log
 
@@ -193,3 +200,10 @@ that died belong here as much as the one that lived.
   should play exactly as 7974346f did; the first reading is that, then the
   menu entries appear under the game's own.  (The file-settings build
   98d985e0 went on the card earlier the same day and was replaced unrun.)
+- 2026-10-08, 76f07c6e on hardware with an Analogizer and a CRT: "looks
+  good"; the picture sits about 10 px too high, all of it visible with the
+  set's overscan on.  The menu, the adapter, the video path and the
+  defaults all work on the real firmware.  Led to the position sliders.
+- 2026-10-08, bitstream 2fb58c1a5ef5aa60f501b7ce536129c8 (Analogizer H/V
+  Position sliders): not yet run.  At 0 it should look exactly as 76f07c6e
+  did; "Analogizer V Position" +10 should centre the picture on that CRT.

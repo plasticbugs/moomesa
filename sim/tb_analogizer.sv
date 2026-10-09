@@ -14,6 +14,9 @@
 //           the word, the adapter's copy of it and the enable each follow
 //   RGBS    every visible pixel of a frame reaches the DAC pins, in order,
 //           as its top six bits per channel; csync once a line, hsync-long
+//   position  both ends of the menu's position sliders: csync moves by the
+//           dots and lines asked and stays out of the picture, the picture
+//           is unchanged, and a jump between settings never inverts csync
 //   SVGA    the scandoubler: twice the lines per frame, at half the period
 //   YPbPr, Y/C  run without an unknown on any pin (no reference to compare)
 //   SNAC    each assignment puts pads where AnalogizerConfigurator says
@@ -79,9 +82,14 @@ module tb_analogizer;
     wire  [31:0] bridge_rd_data;
     // the whole word, as a firmware that merges the menu's fields itself
     // writes it: a number, no byte swap
+    logic [31:0] last_word = 32'h0;          // the word as last written
     task automatic write_settings(input [31:0] v);
+        last_word = v;
+        write_word(32'hF7000000, v);
+    endtask
+    task automatic write_word(input [31:0] a, input [31:0] v);
         @(posedge clk_74a);
-        bridge_addr    <= 32'hF7000000;
+        bridge_addr    <= a;
         bridge_wr_data <= v;
         bridge_wr      <= 1'b1;
         @(posedge clk_74a);
@@ -96,8 +104,11 @@ module tb_analogizer;
     // a read as io_bridge_peripheral does one: the address, then the data
     // sampled four clocks later, and only then the bridge_rd pulse
     task automatic read_settings(output [31:0] v);
+        read_word(32'hF7000000, v);
+    endtask
+    task automatic read_word(input [31:0] a, output [31:0] v);
         @(posedge clk_74a);
-        bridge_addr <= 32'hF7000000;
+        bridge_addr <= a;
         repeat (4) @(posedge clk_74a);
         v = bridge_rd_data;
         bridge_rd <= 1'b1;
@@ -234,6 +245,82 @@ module tb_analogizer;
         if (dac_vs !== 1'b1) fail("RGBS: VGA vsync pin not high");
     endtask
 
+    // the position sliders, as the menu writes them (whole words, signed),
+    // and read back as the firmware reads them every frame
+    task automatic set_position(input int h, input int v);
+        logic [31:0] rh, rv;
+        write_word(32'hF7000004, 32'(h));
+        write_word(32'hF7000008, 32'(v));
+        read_word(32'hF7000004, rh);
+        read_word(32'hF7000008, rv);
+        if (rh !== 32'(h) || rv !== 32'(v)) begin
+            $display("  position %0d,%0d: read back %08h %08h", h, v, rh, rv);
+            fail("position: the sliders do not read back");
+        end
+        read_word(32'hF7000000, rh);
+        if (rh !== last_word) fail("position: a slider changed the settings word");
+        repeat (20) @(posedge clk);
+    endtask
+
+    // RGBS, at the pins: csync's fall to the first visible dot of the frame
+    // after the vsync, in whole lines (gv), and of a line, in clocks (gh);
+    // and for how many clocks csync is low while a dot is being drawn: a
+    // sync moved out of the blanking (an hsync, or a vsync, during which
+    // csync is low all line)
+    task automatic measure_position(output int gh, output int gv, output int in_pic);
+        int t, run, vs_t;
+        logic cs_p, bl_p;
+        frame_start();
+        repeat (2000) @(posedge clk);
+        in_pic = 0;
+        repeat (FRAME) begin
+            @(negedge clk);
+            if (dac_blank_n && !dac_hs) in_pic++;
+        end
+        // the vsync: the first low run on csync longer than two hsyncs
+        run = 0; t = 0;
+        while (run < 2 * (HS1 - HS0) * APD) begin
+            @(negedge clk); t++;
+            run = dac_hs ? 0 : run + 1;
+        end
+        vs_t = t - run;
+        do begin bl_p = dac_blank_n; @(negedge clk); t++; end while (bl_p || !dac_blank_n);
+        gv = (t - vs_t + HTOTAL * APD / 2) / (HTOTAL * APD);
+        // a line: csync's fall to the next visible dot
+        do begin cs_p = dac_hs; @(negedge clk); end while (!cs_p || dac_hs);
+        t = 0;
+        do begin bl_p = dac_blank_n; @(negedge clk); t++; end while (bl_p || !dac_blank_n);
+        gh = t;
+    endtask
+
+    // a slider jump, written just after a pulse at the old setting, that
+    // puts the next one a dot (a line) after it ends: csync must not be low
+    // while a dot is drawn in the three frames around it (header of
+    // pocket_analogizer: sync_fix and the off-time rule)
+    task automatic check_jump(input logic vert, input int from, input int to);
+        int bad = 0;
+        if (vert) set_position(0, from); else set_position(from, 0);
+        repeat (FRAME) @(posedge clk);
+        fork
+            begin
+                if (vert) begin
+                    @(negedge dut.o_vs);
+                    write_word(32'hF7000008, 32'(to));
+                end else begin
+                    @(negedge dut.o_hs iff !dut.b_vb);     // on a line with a picture
+                    write_word(32'hF7000004, 32'(to));
+                end
+            end
+            repeat (3 * FRAME) begin
+                @(negedge clk);
+                if (dac_blank_n && !dac_hs) bad++;
+            end
+        join
+        $display("position: %s %0d to %0d at once: csync low for %0d clocks of picture",
+                 vert ? "V" : "H", from, to, bad);
+        if (bad != 0) fail("position: a jump in a slider turns csync inside out");
+    endtask
+
     // the scandoubler: hsync pulses between two like vsync edges, and the
     // line period (either polarity: only like edges are compared)
     task automatic check_svga();
@@ -348,6 +435,38 @@ module tb_analogizer;
         if (ena !== 1'b1) fail("enable bit not seen");
         if (bank3_dir !== 1'b1 || bank2_dir !== 1'b1 || bank1_dir !== 1'b1) fail("RGBS: video banks not driven");
         check_rgbs();
+
+        // the position sliders: each end of the range the menu ships.  The
+        // picture itself must not change, csync must move by exactly the
+        // dots and lines asked, and stay out of the picture
+        begin
+            int gh0, gv0, e0, gh, gv, e;
+            int hs[2] = '{POS_H_MAX, POS_H_MIN}, vs_[2] = '{POS_V_MAX, POS_V_MIN};
+            if (POS_H_MAX <= 0 || POS_V_MAX <= 0 || POS_H_MIN >= 0 || POS_V_MIN >= 0)
+                fail("position: interact.json has no position sliders at 0xF7000004/8");
+            measure_position(gh0, gv0, e0);
+            if (e0 != 0) fail("position: csync low inside the picture at 0,0");
+            for (int i = 0; i < 2; i++) begin
+                set_position(hs[i], vs_[i]);
+                check_rgbs();
+                measure_position(gh, gv, e);
+                $display("position %0d,%0d: csync to picture %0d clocks (%0d at 0), %0d lines (%0d at 0), csync low for %0d clocks of picture",
+                         hs[i], vs_[i], gh, gh0, gv, gv0, e);
+                if (gh - gh0 != hs[i] * APD) fail("position: the picture did not move by the dots asked");
+                if (gv - gv0 != vs_[i]) fail("position: the picture did not move by the lines asked");
+                if (e != 0) fail("position: a sync moved into the picture");
+                write_settings(settings(1'b1, 5'h00, 4'd0, 4'h5, 1'b0));
+                check_svga();
+                write_settings(settings(1'b1, 5'h00, 4'd0, 4'h0, 1'b0));
+            end
+            check_jump(1'b1, POS_V_MAX, (POS_V_MAX - (VS1 - VS0) - 1 < POS_V_MIN) ? POS_V_MIN
+                                        : POS_V_MAX - (VS1 - VS0) - 1);
+            check_jump(1'b0, POS_H_MAX, (POS_H_MAX - (HS1 - HS0) - 1 < POS_H_MIN) ? POS_H_MIN
+                                        : POS_H_MAX - (HS1 - HS0) - 1);
+            set_position(0, 0);
+            measure_position(gh, gv, e);
+            if (gh != gh0 || gv != gv0) fail("position: 0,0 is not where it started");
+        end
 
         write_settings(settings(1'b1, 5'h00, 4'd0, 4'h5, 1'b0));   // SC 0% RGBHV
         check_svga();

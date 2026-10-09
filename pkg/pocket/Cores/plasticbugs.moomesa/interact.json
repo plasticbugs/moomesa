@@ -189,6 +189,26 @@
           {"name": "SNAC P1,P2 -> P3,P4", "value": "0x100"},
           {"name": "SNAC P1-P4 -> P1-P4", "value": "0x140"}
         ]
+      },
+      {
+        "name": "Analogizer H Position",
+        "id": 74,
+        "type": "slider_u32",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF7000004",
+        "defaultval": 0,
+        "graphical": {"signed": true, "min": -24, "max": 24, "adjust_small": 1, "adjust_large": 4}
+      },
+      {
+        "name": "Analogizer V Position",
+        "id": 75,
+        "type": "slider_u32",
+        "enabled": true,
+        "persist": true,
+        "address": "0xF7000008",
+        "defaultval": 0,
+        "graphical": {"signed": true, "min": -16, "max": 16, "adjust_small": 1, "adjust_large": 4}
       }
     ]
   }

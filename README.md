@@ -25,9 +25,9 @@ DMA.  All of it is in the gateware; the machine is described in
 ## Status
 
 **Runs on the Pocket**: boots, passes its RAM/ROM check, and plays through
-stage 1 and into stage 2.  The build fits (57% of the ALMs, 278 of 308 RAM
+stage 1 and into stage 2.  The build fits (59% of the ALMs, 278 of 308 RAM
 blocks, with the Analogizer) and meets timing at every corner (worst setup
-slack +0.354 ns at 96 MHz).  `docs/bringup.md` logs every hardware run.
+slack +0.111 ns at 96 MHz).  `docs/bringup.md` logs every hardware run.
 
 ## Controls and menu
 
@@ -54,12 +54,13 @@ The core supports RndMnkIII's [Analogizer](https://github.com/RndMnkIII/Analogiz
 adapter: the board's native 15 kHz picture out of the VGA port (RGBS, RGsB,
 YPbPr, Y/C, or scandoubled for a VGA monitor), and up to four SNAC
 controllers.  It is set up in the core's own menu (Analogizer, Analogizer
-Video, SNAC Adapter, SNAC Assignment); with "Analogizer" off,
-the default, the core is unchanged.
+Video, SNAC Adapter, SNAC Assignment, and H and V Position to centre the
+picture on the CRT); with "Analogizer" off, the default, the core is
+unchanged.
 Because the core declares a cartridge adapter, the Pocket powers the slot:
 take any game cartridge out first.  `docs/analogizer.md` has the modes, the
 controller assignments, and what has and has not been checked (the path is
-proven in simulation; no Analogizer has been tried with this core yet).
+proven in simulation; on hardware it has had one run, on a CRT).
 
 ## What is proven, and by what
 
