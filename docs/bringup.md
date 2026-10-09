@@ -207,3 +207,5 @@ that died belong here as much as the one that lived.
 - 2026-10-08, bitstream 2fb58c1a5ef5aa60f501b7ce536129c8 (Analogizer H/V
   Position sliders): not yet run.  At 0 it should look exactly as 76f07c6e
   did; "Analogizer V Position" +10 should centre the picture on that CRT.
+- 2026-10-08, 2fb58c1a on hardware with the Analogizer: "works great";
+  released as v0.3.0 from this bitstream.

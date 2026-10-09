@@ -13,6 +13,38 @@ and copy `moomesa.rom` to `Assets/moomesa/common/` on the SD card. The image's
 md5 is `0ebb990422cb6b7c9c067b11450fd638`. Then unzip this package onto the
 card's root.
 
+## New in 0.3.0: Analogizer support
+
+The core now works with RndMnkIII's
+[Analogizer](https://github.com/RndMnkIII/Analogizer) adapter: the board's own
+15 kHz picture on a CRT, and native controllers through SNAC. Tested on a
+Pocket with an Analogizer and a CRT.
+
+- **Video out of the adapter's VGA port**: RGBS, RGsB, YPbPr, Y/C (NTSC or
+  PAL), or scandoubled for a VGA monitor (plain, 25/50/75% scanlines, HQ2x).
+  The signal is the board's: 384x224 visible, 15.625 kHz, 59.19 Hz.
+- **Set up from the core's own menu**, like RndMnkIII's own cores: no
+  `analogizer.bin` file needed. **Analogizer** (Off, On, or "On, Pocket off"
+  to send the picture to the CRT only), **Analogizer Video**, **SNAC
+  Adapter** and **SNAC Assignment**. Off by default, and with it off the
+  core is exactly as before.
+- **Analogizer H Position / V Position** move the picture on the CRT
+  (up to 24 pixels left or right, 16 lines up or down) for a set whose
+  picture sits off centre. They move the sync, not the picture, so nothing
+  is cropped.
+- **SNAC controllers**: DB15, NES, SNES, PC Engine (2- and 6-button,
+  multitap), PlayStation (digital and analog). Moo Mesa is a four-player
+  board: with a PC Engine multitap, "SNAC P1-P4" gives all four players
+  pads. SNAC has not been tried with this core yet.
+
+**With this core the Pocket powers the cartridge slot.** Take any game
+cartridge out first. Set the adapter up as its
+[How to use it](https://github.com/RndMnkIII/Analogizer/wiki/How-to-use-it%3F)
+page says (SNAC switch on A, 5 V into its USB-C port, the audio cable into
+the Pocket's headphone socket).
+
+---
+
 ## New in 0.2.0
 
 - **The final boss's fog now fades away and stays gone.** MAME, and this
